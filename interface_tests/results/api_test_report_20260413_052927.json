@@ -1,0 +1,183 @@
+{
+  "run_id": "20260413_052927",
+  "started_at_utc": "2026-04-13T05:29:27.908770+00:00",
+  "ended_at_utc": "2026-04-13T05:29:41.460737+00:00",
+  "duration_seconds": 13.552177499979734,
+  "python": "3.12.4 (tags/v3.12.4:8e8a4ba, Jun  6 2024, 19:30:16) [MSC v.1940 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.22631-SP0",
+  "source_doc": "../docs/API搜索与记录.md",
+  "results": [
+    {
+      "name": "OpenSky",
+      "ok": true,
+      "status_code": 200,
+      "message": "请求完成",
+      "preview": {
+        "time": 1776058169,
+        "state_count": 103,
+        "sample_state": [
+          "801622",
+          "IGO1721 ",
+          "India",
+          1776057950,
+          1776057958,
+          113.5424,
+          22.0151,
+          5791.2,
+          false,
+          159.28,
+          162.33,
+          -0.33,
+          null,
+          6134.1,
+          null,
+          false,
+          0
+        ]
+      },
+      "duration_ms": 2203.6900999955833,
+      "category": "flight_data_api"
+    },
+    {
+      "name": "AeroDataBox",
+      "ok": true,
+      "status_code": 200,
+      "message": "请求完成",
+      "preview": {
+        "keys": [
+          "departures",
+          "arrivals"
+        ],
+        "arrivals_count": 498,
+        "departures_count": 704
+      },
+      "duration_ms": 2857.8293998725712,
+      "category": "flight_data_api"
+    },
+    {
+      "name": "Aviationstack",
+      "ok": true,
+      "status_code": 200,
+      "message": "请求完成",
+      "preview": {
+        "pagination": {
+          "limit": 5,
+          "offset": 0,
+          "count": 5,
+          "total": 372146
+        },
+        "item_count": 5,
+        "sample": {
+          "flight_date": "2026-04-13",
+          "flight_status": "scheduled",
+          "departure": {
+            "airport": "Montgomery Co",
+            "timezone": "America/Chicago",
+            "iata": "CXO",
+            "icao": "KCXO",
+            "terminal": null,
+            "gate": null,
+            "delay": null,
+            "scheduled": "2026-04-13T06:15:00+00:00",
+            "estimated": "2026-04-13T06:15:00+00:00",
+            "actual": null,
+            "estimated_runway": null,
+            "actual_runway": null
+          },
+          "arrival": {
+            "airport": "Easterwood Field",
+            "timezone": "America/Chicago",
+            "iata": "CLL",
+            "icao": "KCLL",
+            "terminal": null,
+            "gate": null,
+            "baggage": null,
+            "scheduled": "2026-04-13T06:40:00+00:00",
+            "delay": null,
+            "estimated": null,
+            "actual": null,
+            "estimated_runway": null,
+            "actual_runway": null
+          },
+          "airline": {
+            "name": "Japan Airlines",
+            "iata": "JL",
+            "icao": "JTL"
+          },
+          "flight": {
+            "number": "939",
+            "iata": "JL939",
+            "icao": "JTL939",
+            "codeshared": null
+          },
+          "aircraft": null,
+          "live": null
+        }
+      },
+      "duration_ms": 1752.6891001034528,
+      "category": "flight_data_api"
+    },
+    {
+      "name": "Leaflet (library check)",
+      "ok": true,
+      "status_code": 200,
+      "message": "请求完成",
+      "preview": {
+        "package": "leaflet",
+        "latest": "1.9.4",
+        "description": "JavaScript library for mobile-friendly interactive maps"
+      },
+      "duration_ms": 1897.0973999239504,
+      "category": "frontend_map_library"
+    },
+    {
+      "name": "CesiumJS (library check)",
+      "ok": true,
+      "status_code": 200,
+      "message": "请求完成",
+      "preview": {
+        "package": "cesium",
+        "latest": "1.140.0",
+        "description": "CesiumJS is a JavaScript library for creating 3D globes and 2D maps in a web browser without a plugin."
+      },
+      "duration_ms": 1728.5231999121606,
+      "category": "frontend_map_library"
+    },
+    {
+      "name": "AntV L7 (library check)",
+      "ok": true,
+      "status_code": 200,
+      "message": "请求完成",
+      "preview": {
+        "package": "@antv/l7",
+        "latest": "2.25.4",
+        "description": "A Large-scale WebGL-powered Geospatial Data Visualization"
+      },
+      "duration_ms": 1872.945399954915,
+      "category": "frontend_map_library"
+    },
+    {
+      "name": "OpenWeatherMap",
+      "ok": true,
+      "status_code": 200,
+      "message": "请求完成",
+      "preview": {
+        "city": "Guangzhou",
+        "weather": "Clear",
+        "temperature_c": 30.74,
+        "wind": {
+          "speed": 4.44,
+          "deg": 180,
+          "gust": 5.88
+        }
+      },
+      "duration_ms": 1232.2992000263184,
+      "category": "weather_api"
+    }
+  ],
+  "summary": {
+    "total": 7,
+    "failed": 0,
+    "passed": 7
+  }
+}

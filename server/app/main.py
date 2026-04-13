@@ -4,9 +4,11 @@ from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 
 from app.api.routes.flights import router as flights_router
 from app.api.routes.health import router as health_router
+from app.api.routes.insights import router as insights_router
 from app.api.ws.flights_ws import router as ws_router
 from app.core.config import settings
 from app.core.logging import configure_logging
@@ -45,7 +47,15 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
+
+
+@app.get("/", include_in_schema=False)
+async def root_redirect() -> RedirectResponse:
+    return RedirectResponse(url="/debug/flights-dashboard")
+
+
 app.include_router(health_router)
+app.include_router(insights_router)
 app.include_router(flights_router)
 app.include_router(ws_router)
 

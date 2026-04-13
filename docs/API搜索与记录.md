@@ -8,13 +8,14 @@
 
 ## AeroDataBox(航班详情与搜索接口)
 
-    - 每天约 200 次免费调用(通过rapidapi)
+    - 每月约 600 次免费调用(通过rapidapi)
     - 获取航班延误统计、航站楼/登机口、机型参数。
     - 链接：https://aerodatabox.com/
+    - ![alt text](image.png)
 
 ## Aviationstack
 
-    - 免费的每月500次调用
+    - 免费的每月100次调用
     - 获取实时航班查询、历史记录、航线信息。
     - 链接：https://github.com/apilayer/aviationstack
 
@@ -22,6 +23,7 @@
 
     - 用于网页上交互式、可自定义矢量地图的 JavaScript 库
     - 链接：https://github.com/mapbox/mapbox-gl-js
+    - 当前状态：由于IP限制导致无法完成账号注册，暂不采用并移出接口测试清单。
 
 ## Leaflet(地图底图接口)
 
