@@ -2,13 +2,14 @@
 
 ## OpenSky Network(实时位置接口)
 
-    - 注册后免费，频率限制较宽松。
+    - 注册后免费，频率限制较宽松。(每日四千次调用)
+    - 24小时调用则21.6s轮询一次，12小时调用则10.8s轮询一次，能够满足实时性需求。
     - 能够获取实时状态、位置更新、历史轨迹。
     - 链接：https://github.com/openskynetwork/opensky-api
 
 ## AeroDataBox(航班详情与搜索接口)
 
-    - 每月约 600 次免费调用(通过rapidapi)
+    - 每月约 600 次调用(通过rapidapi，分层级限制调用)
     - 获取航班延误统计、航站楼/登机口、机型参数。
     - 链接：https://aerodatabox.com/
     - ![alt text](image.png)
@@ -39,6 +40,11 @@
 
     - 基于 WebGL 的开源大规模地理空间数据可视分析引擎
     - 链接：https://github.com/antvis/L7
+
+## Turfjs(地理空间分析库)
+
+    - 用于地理空间分析和处理的 JavaScript 库，适合航迹分析、缓冲区计算等。
+    - 链接：https://github.com/Turfjs/turf
 
 # 后端增强与实时通信 (Python / Qt 侧)
 
