@@ -64,3 +64,30 @@ python run_all.py
 - 汇总统计接口：`/api/v1/flights/summary`
 - 航班列表接口：`/api/v1/flights?page=1&page_size=500`
 - 字段含义、用途、使用方式说明文档：`docs/后端数据可视化与字段说明.md`
+
+## 11. 后端统一采集与统一下发落地记录（2026-04-13）
+
+### 11.1 已落地能力
+- 统一采集：实时层（OpenSky）、环境层（OpenWeather）、商业层（AeroDataBox/Aviationstack）。
+- 统一缓存：后端维护航班快照、天气缓存、商业信息缓存。
+- 统一下发：新增 `datahub` 聚合接口，前端不再直接访问第三方。
+
+### 11.2 双配置与开发档位策略
+- 双配置入口：`APP_PROFILE=development|release`。
+- 默认开发配置：`development`。
+- 开发档位 OpenSky 轮询策略：
+	- 活跃时段：15s
+	- 非活跃时段：40s
+	- 起点：08:00
+	- 按 4000 次/日预算自动计算活跃结束时间，当前约为 20:16。
+
+### 11.3 新增接口
+- `GET /api/v1/datahub/status`
+- `GET /api/v1/datahub/weather`
+- `GET /api/v1/datahub/commercial`
+- `GET /api/v1/datahub/snapshot`
+
+### 11.4 验证结论
+- `GET /api/v1/datahub/status` 可返回配置档位、当前轮询间隔与最近采集状态。
+- `GET /api/v1/datahub/snapshot` 可一次性返回 `status + flights + weather + commercial`。
+- 根路径 `/` 已重定向至 `/debug/flights-dashboard`，便于直接查看后端可视化页面。
