@@ -12,6 +12,7 @@ from app.api.routes.insights import router as insights_router
 from app.api.ws.flights_ws import router as ws_router
 from app.core.config import settings
 from app.core.logging import configure_logging
+from app.services.db import close_db, init_db
 from app.state import unified_pipeline
 
 logger = logging.getLogger(__name__)
@@ -21,11 +22,13 @@ logger = logging.getLogger(__name__)
 async def lifespan(_: FastAPI):
     configure_logging(settings.log_level)
     logger.info("starting backend service")
+    await init_db()
     await unified_pipeline.start()
     try:
         yield
     finally:
         await unified_pipeline.stop()
+        await close_db()
         logger.info("stopping backend service")
 
 

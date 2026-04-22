@@ -8,12 +8,41 @@ from typing import Any, Literal
 import aiohttp
 
 from app.core.config import settings
-from app.models.schemas import FlightBrief
+from app.models.schemas import FlightBrief, WsEvent
 from app.services.flight_store import FlightStore
 from app.services.mock_collector import MockCollector
 
 logger = logging.getLogger(__name__)
 LayerName = Literal["realtime", "environment", "commercial"]
+
+# Comprehensive list of the world's top ~100 airports by passenger traffic.
+# Used as the default target set for AeroDataBox when no override is configured.
+_GLOBAL_AIRPORTS: list[str] = [
+    # North America
+    "ATL", "LAX", "ORD", "DFW", "DEN", "JFK", "SFO", "SEA", "LAS", "MIA",
+    "CLT", "PHX", "MCO", "EWR", "MSP", "BOS", "DTW", "PHL", "IAH", "FLL",
+    "BWI", "SLC", "MDW", "DCA", "SAN", "TPA", "PDX", "HNL", "LGA", "STL",
+    # Central & South America
+    "GRU", "GIG", "MEX", "BOG", "LIM", "SCL", "EZE", "PTY", "YYZ", "YVR", "YUL",
+    # Europe
+    "LHR", "CDG", "AMS", "FRA", "MAD", "BCN", "FCO", "MXP", "LGW", "MUC",
+    "ZRH", "CPH", "ARN", "OSL", "HEL", "DUB", "VIE", "BRU", "LIS", "ATH",
+    "IST", "WAW", "PRG", "BUD", "OTP", "TXL", "LIN", "LCY", "STN", "ORY",
+    # Middle East & Africa
+    "DXB", "AUH", "DOH", "RUH", "JED", "MCT",
+    "CAI", "ADD", "JNB", "CPT", "NBO", "LOS", "CMN", "ACC", "DAR", "ABJ",
+    # South & Southeast Asia
+    "DEL", "BOM", "MAA", "HYD", "BLR", "CCU", "COK",
+    "BKK", "KUL", "CGK", "SIN", "MNL", "SGN", "HAN", "RGN", "PNH",
+    # East Asia
+    "PEK", "PKX", "PVG", "SHA", "CAN", "CTU", "SZX", "WUH", "XMN",
+    "KMG", "CSX", "TAO", "NKG", "HGH", "CKG", "URC",
+    "HKG", "TPE", "KHH",
+    "NRT", "HND", "KIX", "NGO", "FUK", "CTS",
+    "ICN", "GMP",
+    # Oceania
+    "SYD", "MEL", "BNE", "PER", "ADL", "AKL", "CHC",
+]
 
 
 def _utc_now() -> datetime:
@@ -32,9 +61,15 @@ def _safe_float(value: Any) -> float | None:
 class UnifiedDataPipeline:
     """Collect data from multiple providers and expose unified cache/state."""
 
-    def __init__(self, flight_store: FlightStore, mock_collector: MockCollector) -> None:
+    def __init__(
+        self,
+        flight_store: FlightStore,
+        mock_collector: MockCollector,
+        broadcast_manager: Any = None,
+    ) -> None:
         self._flight_store = flight_store
         self._mock_collector = mock_collector
+        self._broadcast_manager = broadcast_manager
         self._lock = asyncio.Lock()
 
         self._weather_cache: dict[str, Any] = {}
@@ -192,6 +227,14 @@ class UnifiedDataPipeline:
         await self._flight_store.apply_updates(updates)
         await self._record_success("realtime", source=source, count=len(updates), note=note)
 
+        if self._broadcast_manager and updates:
+            event = WsEvent(
+                event="snapshot",
+                ts=_utc_now(),
+                data=[f.model_dump(mode="json") for f in updates],
+            )
+            await self._broadcast_manager.broadcast(event)
+
     async def _collect_environment(self) -> None:
         if not settings.openweather_api_key:
             await self._record_success(
@@ -251,7 +294,72 @@ class UnifiedDataPipeline:
 
         async with self._lock:
             self._commercial_cache = merged
-        await self._record_success("commercial", source="aerodatabox+aviationstack", count=refreshed)
+        enriched_count = await self._enrich_flight_details_from_commercial(merged)
+        await self._record_success("commercial", source="aerodatabox+aviationstack", count=enriched_count)
+
+    async def _enrich_flight_details_from_commercial(self, merged: dict[str, Any]) -> int:
+        """Parse commercial API payloads and persist FlightDetail extra fields. Returns upserted count."""
+        count = 0
+        sources = merged.get("sources") or {}
+
+        # --- AeroDataBox ---
+        aero = sources.get("aerodatabox") or {}
+        raw_aero = aero.get("raw") or {}
+        for direction in ("arrivals", "departures"):
+            entries = raw_aero.get(direction) if isinstance(raw_aero, dict) else None
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                number = (entry.get("number") or "").strip().replace(" ", "")
+                if not number:
+                    continue
+                dep_info = entry.get("departure") or {}
+                arr_info = entry.get("arrival") or {}
+                dep_iata = dep_info.get("airport", {}).get("iata") if isinstance(dep_info, dict) else None
+                arr_iata = arr_info.get("airport", {}).get("iata") if isinstance(arr_info, dict) else None
+                aircraft = entry.get("aircraft") or {}
+                ac_type = aircraft.get("model") if isinstance(aircraft, dict) else None
+                status_raw = entry.get("status") or "enroute"
+                await self._flight_store.upsert_detail_extra(
+                    number,
+                    departure_airport=dep_iata,
+                    arrival_airport=arr_iata,
+                    aircraft_type=ac_type,
+                    status=status_raw,
+                    source="aerodatabox",
+                )
+                count += 1
+
+        # --- Aviationstack ---
+        avi = sources.get("aviationstack") or {}
+        raw_avi = avi.get("raw") or {}
+        data_list = raw_avi.get("data") if isinstance(raw_avi, dict) else None
+        if isinstance(data_list, list):
+            for entry in data_list:
+                if not isinstance(entry, dict):
+                    continue
+                fl_info = entry.get("flight") or {}
+                iata_cs = (fl_info.get("iata") or "").strip().replace(" ", "")
+                if not iata_cs:
+                    continue
+                dep_iata = (entry.get("departure") or {}).get("iata")
+                arr_iata = (entry.get("arrival") or {}).get("iata")
+                aircraft = entry.get("aircraft") or {}
+                ac_type = aircraft.get("iata") if isinstance(aircraft, dict) else None
+                status_raw = entry.get("flight_status") or "enroute"
+                await self._flight_store.upsert_detail_extra(
+                    iata_cs,
+                    departure_airport=dep_iata,
+                    arrival_airport=arr_iata,
+                    aircraft_type=ac_type,
+                    status=status_raw,
+                    source="aviationstack",
+                )
+                count += 1
+
+        return count
 
     async def _fetch_opensky_snapshot(self) -> list[FlightBrief]:
         session = self._require_session()
@@ -349,51 +457,119 @@ class UnifiedDataPipeline:
 
     async def _fetch_aerodatabox_snapshot(self) -> dict[str, Any]:
         session = self._require_session()
-        path = settings.aerodatabox_test_path.lstrip("/")
-        url = f"{settings.aerodatabox_base_url.rstrip('/')}/{path}"
+        # Build a dynamic 12-hour window ending now (handles cross-midnight correctly).
+        from datetime import timedelta
+        now = _utc_now()
+        start_dt = now - timedelta(hours=12)
+        window_start = start_dt.strftime("%Y-%m-%dT%H:%M")
+        window_end = now.strftime("%Y-%m-%dT%H:%M")
+
+        # Empty config → use full global airport list; otherwise honour explicit override.
+        override = settings.aerodatabox_airport_iata.strip()
+        iata_codes = (
+            [code.strip() for code in override.split(",") if code.strip()]
+            if override
+            else _GLOBAL_AIRPORTS
+        )
+        logger.info("AeroDataBox: querying %d airports", len(iata_codes))
         headers = {
             "x-rapidapi-key": settings.aerodatabox_api_key,
             "x-rapidapi-host": settings.aerodatabox_api_host,
         }
         params = {"withLeg": str(settings.aerodatabox_with_leg).lower()}
 
-        async with session.get(url, headers=headers, params=params) as resp:
-            if resp.status != 200:
-                text = await resp.text()
-                raise RuntimeError(f"AeroDataBox HTTP {resp.status}: {text[:200]}")
-            payload = await resp.json(content_type=None)
+        all_arrivals: list[dict] = []
+        all_departures: list[dict] = []
 
-        arrivals = payload.get("arrivals") if isinstance(payload, dict) else []
-        departures = payload.get("departures") if isinstance(payload, dict) else []
+        for iata in iata_codes:
+            path = f"flights/airports/iata/{iata}/{window_start}/{window_end}"
+            url = f"{settings.aerodatabox_base_url.rstrip('/')}/{path}"
+            try:
+                async with session.get(url, headers=headers, params=params) as resp:
+                    if resp.status != 200:
+                        text = await resp.text()
+                        logger.warning("AeroDataBox %s HTTP %d: %s", iata, resp.status, text[:200])
+                        continue
+                    payload = await resp.json(content_type=None)
+                arrivals = payload.get("arrivals") if isinstance(payload, dict) else []
+                departures = payload.get("departures") if isinstance(payload, dict) else []
+                if isinstance(arrivals, list):
+                    all_arrivals.extend(arrivals)
+                if isinstance(departures, list):
+                    all_departures.extend(departures)
+                logger.info(
+                    "AeroDataBox %s: +%d arrivals +%d departures",
+                    iata,
+                    len(arrivals) if isinstance(arrivals, list) else 0,
+                    len(departures) if isinstance(departures, list) else 0,
+                )
+            except Exception as exc:
+                logger.warning("AeroDataBox %s fetch failed: %s", iata, exc)
 
         return {
             "fetched_at": _utc_now(),
-            "arrivals_count": len(arrivals) if isinstance(arrivals, list) else None,
-            "departures_count": len(departures) if isinstance(departures, list) else None,
-            "raw": payload,
+            "arrivals_count": len(all_arrivals),
+            "departures_count": len(all_departures),
+            "raw": {"arrivals": all_arrivals, "departures": all_departures},
         }
 
     async def _fetch_aviationstack_snapshot(self) -> dict[str, Any]:
+        """Fetch ALL available flights from Aviationstack via automatic pagination."""
         session = self._require_session()
         url = f"{settings.aviationstack_base_url.rstrip('/')}/flights"
-        params = {
-            "access_key": settings.aviationstack_access_key,
-            "limit": settings.aviationstack_limit,
-        }
+        page_size = 100  # Aviationstack maximum per request
+        _HARD_LIMIT = 5000  # safety ceiling to avoid runaway billing
 
-        async with session.get(url, params=params) as resp:
-            if resp.status != 200:
-                text = await resp.text()
-                raise RuntimeError(f"Aviationstack HTTP {resp.status}: {text[:200]}")
-            payload = await resp.json(content_type=None)
+        all_data: list[dict] = []
+        offset = 0
+        total_reported = None
 
-        data = payload.get("data") if isinstance(payload, dict) else None
+        while True:
+            params = {
+                "access_key": settings.aviationstack_access_key,
+                "limit": page_size,
+                "offset": offset,
+            }
+            async with session.get(url, params=params) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    raise RuntimeError(f"Aviationstack HTTP {resp.status}: {text[:200]}")
+                payload = await resp.json(content_type=None)
 
+            data = payload.get("data") if isinstance(payload, dict) else None
+            if not isinstance(data, list) or len(data) == 0:
+                break
+
+            all_data.extend(data)
+            pagination = payload.get("pagination") if isinstance(payload, dict) else {}
+            if total_reported is None:
+                total_reported = (pagination or {}).get("total", 0)
+
+            offset += len(data)
+            logger.info(
+                "Aviationstack page offset=%d fetched=%d total=%s",
+                offset - len(data), len(data), total_reported,
+            )
+
+            # Stop when all pages consumed or hard limit reached
+            if len(data) < page_size:
+                break
+            if total_reported and offset >= total_reported:
+                break
+            if len(all_data) >= _HARD_LIMIT:
+                logger.warning(
+                    "Aviationstack: reached hard limit %d, stopping pagination", _HARD_LIMIT
+                )
+                break
+
+            await asyncio.sleep(0.3)  # polite pause between pages
+
+        logger.info("Aviationstack: total fetched=%d (reported total=%s)", len(all_data), total_reported)
         return {
             "fetched_at": _utc_now(),
-            "item_count": len(data) if isinstance(data, list) else None,
-            "pagination": payload.get("pagination") if isinstance(payload, dict) else None,
-            "raw": payload,
+            "item_count": len(all_data),
+            "pagination": {"total": total_reported, "fetched": len(all_data)},
+            "raw": {"data": all_data},
         }
 
     async def _record_success(
