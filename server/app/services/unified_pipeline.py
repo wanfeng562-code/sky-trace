@@ -489,25 +489,25 @@ class UnifiedDataPipeline:
                     if resp.status != 200:
                         text = await resp.text()
                         logger.warning("AeroDataBox %s HTTP %d: %s", iata, resp.status, text[:200])
-                        continue
-                    payload = await resp.json(content_type=None)
-                arrivals = payload.get("arrivals") if isinstance(payload, dict) else []
-                departures = payload.get("departures") if isinstance(payload, dict) else []
-                if isinstance(arrivals, list):
-                    all_arrivals.extend(arrivals)
-                if isinstance(departures, list):
-                    all_departures.extend(departures)
-                logger.info(
-                    "AeroDataBox %s: +%d arrivals +%d departures",
-                    iata,
-                    len(arrivals) if isinstance(arrivals, list) else 0,
-                    len(departures) if isinstance(departures, list) else 0,
-                )
+                    else:
+                        payload = await resp.json(content_type=None)
+                        arrivals = payload.get("arrivals") if isinstance(payload, dict) else []
+                        departures = payload.get("departures") if isinstance(payload, dict) else []
+                        if isinstance(arrivals, list):
+                            all_arrivals.extend(arrivals)
+                        if isinstance(departures, list):
+                            all_departures.extend(departures)
+                        logger.info(
+                            "AeroDataBox %s: +%d arrivals +%d departures",
+                            iata,
+                            len(arrivals) if isinstance(arrivals, list) else 0,
+                            len(departures) if isinstance(departures, list) else 0,
+                        )
             except Exception as exc:
                 logger.warning("AeroDataBox %s fetch failed: %s", iata, exc)
-
-            # BASIC plan rate limit: 1 req/s. Sleep between every airport request.
-            await asyncio.sleep(1.1)
+            finally:
+                # BASIC plan rate limit: 1 req/s. Always sleep, even on error/429.
+                await asyncio.sleep(1.1)
 
         return {
             "fetched_at": _utc_now(),
