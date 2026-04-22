@@ -9,6 +9,14 @@ export interface FlightBrief {
 	updated_at: string;
 }
 
+export interface TrackPoint {
+	ts: string;
+	lat: number;
+	lon: number;
+	altitude_ft?: number;
+	speed_kts?: number;
+}
+
 export interface ApiResponse<T> {
 	code: number;
 	message: string;
