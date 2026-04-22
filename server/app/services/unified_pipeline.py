@@ -506,6 +506,9 @@ class UnifiedDataPipeline:
             except Exception as exc:
                 logger.warning("AeroDataBox %s fetch failed: %s", iata, exc)
 
+            # BASIC plan rate limit: 1 req/s. Sleep between every airport request.
+            await asyncio.sleep(1.1)
+
         return {
             "fetched_at": _utc_now(),
             "arrivals_count": len(all_arrivals),
