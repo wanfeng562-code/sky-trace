@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     aerodatabox_api_key: str = ""
     aerodatabox_api_host: str = "aerodatabox.p.rapidapi.com"
     aerodatabox_base_url: str = "https://aerodatabox.p.rapidapi.com"
+    aerodatabox_airport_iata: str = "SZX"
     aerodatabox_test_path: str = "flights/airports/iata/SZX/2026-04-13T00:00/2026-04-13T12:00"
     aerodatabox_with_leg: bool = True
 
