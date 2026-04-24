@@ -15,34 +15,31 @@ from app.services.mock_collector import MockCollector
 logger = logging.getLogger(__name__)
 LayerName = Literal["realtime", "environment", "commercial"]
 
-# Comprehensive list of the world's top ~100 airports by passenger traffic.
-# Used as the default target set for AeroDataBox when no override is configured.
-_GLOBAL_AIRPORTS: list[str] = [
-    # North America
-    "ATL", "LAX", "ORD", "DFW", "DEN", "JFK", "SFO", "SEA", "LAS", "MIA",
-    "CLT", "PHX", "MCO", "EWR", "MSP", "BOS", "DTW", "PHL", "IAH", "FLL",
-    "BWI", "SLC", "MDW", "DCA", "SAN", "TPA", "PDX", "HNL", "LGA", "STL",
-    # Central & South America
-    "GRU", "GIG", "MEX", "BOG", "LIM", "SCL", "EZE", "PTY", "YYZ", "YVR", "YUL",
-    # Europe
-    "LHR", "CDG", "AMS", "FRA", "MAD", "BCN", "FCO", "MXP", "LGW", "MUC",
-    "ZRH", "CPH", "ARN", "OSL", "HEL", "DUB", "VIE", "BRU", "LIS", "ATH",
-    "IST", "WAW", "PRG", "BUD", "OTP", "TXL", "LIN", "LCY", "STN", "ORY",
-    # Middle East & Africa
-    "DXB", "AUH", "DOH", "RUH", "JED", "MCT",
-    "CAI", "ADD", "JNB", "CPT", "NBO", "LOS", "CMN", "ACC", "DAR", "ABJ",
-    # South & Southeast Asia
-    "DEL", "BOM", "MAA", "HYD", "BLR", "CCU", "COK",
-    "BKK", "KUL", "CGK", "SIN", "MNL", "SGN", "HAN", "RGN", "PNH",
-    # East Asia
-    "PEK", "PKX", "PVG", "SHA", "CAN", "CTU", "SZX", "WUH", "XMN",
-    "KMG", "CSX", "TAO", "NKG", "HGH", "CKG", "URC",
-    "HKG", "TPE", "KHH",
-    "NRT", "HND", "KIX", "NGO", "FUK", "CTS",
-    "ICN", "GMP",
-    # Oceania
-    "SYD", "MEL", "BNE", "PER", "ADL", "AKL", "CHC",
-]
+# Static lat/lon for top global aviation hubs used as weather sampling points.
+# Keyed by IATA airport code; overridable via OPENWEATHER_HUBS in .env.
+_HUB_COORDS: dict[str, tuple[float, float]] = {
+    "CAN": (23.3925, 113.2988),   # Guangzhou Baiyun
+    "SZX": (22.6395, 113.8108),   # Shenzhen Bao'an
+    "PEK": (40.0799, 116.5833),   # Beijing Capital
+    "PVG": (31.1434, 121.8052),   # Shanghai Pudong
+    "HKG": (22.3080, 113.9185),   # Hong Kong
+    "NRT": (35.7647, 140.3864),   # Tokyo Narita
+    "ICN": (37.4602, 126.4407),   # Seoul Incheon
+    "SIN": (1.3644,  103.9915),   # Singapore Changi
+    "DXB": (25.2528,  55.3644),   # Dubai
+    "DOH": (25.2609,  51.6138),   # Doha Hamad
+    "LHR": (51.4775,  -0.4614),   # London Heathrow
+    "CDG": (49.0097,   2.5479),   # Paris CDG
+    "FRA": (50.0379,   8.5622),   # Frankfurt
+    "AMS": (52.3086,   4.7639),   # Amsterdam Schiphol
+    "JFK": (40.6413,  -73.7781),  # New York JFK
+    "LAX": (33.9425, -118.4081),  # Los Angeles
+    "ORD": (41.9742,  -87.9073),  # Chicago O'Hare
+    "ATL": (33.6367,  -84.4281),  # Atlanta
+    "SYD": (-33.9399, 151.1753),  # Sydney Kingsford Smith
+    "GRU": (-23.4356,  -46.4731), # São Paulo Guarulhos
+}
+_DEFAULT_HUBS: list[str] = list(_HUB_COORDS.keys())
 
 
 def _utc_now() -> datetime:
@@ -73,7 +70,9 @@ class UnifiedDataPipeline:
         self._lock = asyncio.Lock()
 
         self._weather_cache: dict[str, Any] = {}
+        self._air_quality_cache: dict[str, Any] = {}
         self._commercial_cache: dict[str, Any] = {}
+
         self._status: dict[str, dict[str, Any]] = {
             "profile": {
                 "profile": settings.app_profile,
@@ -102,7 +101,7 @@ class UnifiedDataPipeline:
                 "failure_count": 0,
             },
             "commercial": {
-                "source": "aerodatabox+aviationstack",
+                "source": "airlabs",
                 "last_success_at": None,
                 "last_error_at": None,
                 "last_error": None,
@@ -182,6 +181,10 @@ class UnifiedDataPipeline:
         async with self._lock:
             return dict(self._weather_cache)
 
+    async def get_air_quality_cache(self) -> dict[str, Any]:
+        async with self._lock:
+            return dict(self._air_quality_cache)
+
     async def get_commercial_cache(self) -> dict[str, Any]:
         async with self._lock:
             return dict(self._commercial_cache)
@@ -198,8 +201,9 @@ class UnifiedDataPipeline:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                await self._record_failure(layer, str(exc))
-                logger.warning("%s collection failed: %s", layer, exc)
+                msg = str(exc).strip() or exc.__class__.__name__
+                await self._record_failure(layer, msg)
+                logger.warning("%s collection failed [%s]: %s", layer, type(exc).__name__, msg)
             await asyncio.sleep(settings.interval_seconds(layer))
 
     async def _collect_realtime(self) -> None:
@@ -245,130 +249,158 @@ class UnifiedDataPipeline:
             )
             return
 
-        payload = await self._fetch_openweather_snapshot()
+        # Resolve hub list: config override → built-in default
+        if settings.openweather_hubs:
+            hub_list = [h.strip().upper() for h in settings.openweather_hubs.split(",") if h.strip()]
+        else:
+            hub_list = _DEFAULT_HUBS
+
+        hubs: dict[str, tuple[float, float]] = {
+            iata: _HUB_COORDS[iata] for iata in hub_list if iata in _HUB_COORDS
+        }
+        if not hubs:
+            # Absolute fallback: use configured lat/lon as a single unnamed point
+            logger.warning("No valid hub airports resolved; falling back to config lat/lon")
+            hubs = {"_PRIMARY": (settings.openweather_lat, settings.openweather_lon)}
+
+        sem = asyncio.Semaphore(5)  # max 5 concurrent requests to OpenWeather
+
+        async def _fetch_hub(iata: str, lat: float, lon: float) -> tuple[str, dict | None, dict | None]:
+            async with sem:
+                try:
+                    weather = await self._fetch_openweather_by_coords(lat, lon)
+                    weather["iata"] = iata
+                except Exception as exc:
+                    logger.warning("Weather fetch failed for %s: %s [%s]", iata, exc, type(exc).__name__)
+                    return iata, None, None
+                try:
+                    aq = await self._fetch_openweather_air_quality(lat, lon)
+                    aq["iata"] = iata
+                except Exception as exc:
+                    logger.warning("Air quality fetch failed for %s: %s", iata, exc)
+                    aq = None
+                return iata, weather, aq
+
+        results = await asyncio.gather(
+            *[_fetch_hub(iata, lat, lon) for iata, (lat, lon) in hubs.items()],
+            return_exceptions=True,
+        )
+
+        new_weather: dict[str, dict] = {}
+        new_aq: dict[str, dict] = {}
+        ok_count = 0
+        for result in results:
+            if isinstance(result, Exception):
+                logger.warning("Hub weather fetch error: %s [%s]", result, type(result).__name__)
+                continue
+            iata, w, aq = result
+            if w is None:
+                continue
+            new_weather[iata] = w
+            if aq:
+                new_aq[iata] = aq
+            ok_count += 1
+
         async with self._lock:
-            self._weather_cache = payload
-        await self._record_success("environment", source="openweather", count=1)
+            self._weather_cache = new_weather
+            self._air_quality_cache = new_aq
+
+        logger.info("environment collected: %d/%d hubs OK", ok_count, len(hubs))
+        await self._record_success("environment", source="openweather", count=ok_count)
 
     async def _collect_commercial(self) -> None:
-        has_aero = bool(settings.aerodatabox_api_key)
-        has_aviationstack = bool(settings.aviationstack_access_key)
+        """Fetch bulk AirLabs /flights snapshot for the configured bbox and upsert all records.
 
-        if not has_aero and not has_aviationstack:
+        One API call per ``commercial_interval_seconds`` (default 24 h in dev,
+        meaning ≈ 30 calls / month) regardless of how many flights are in the area.
+        This is far more quota-efficient than the previous per-callsign approach.
+        """
+        if not settings.airlabs_api_key:
             await self._record_success(
                 "commercial",
-                source="aerodatabox+aviationstack",
+                source="airlabs",
                 count=0,
-                note="No commercial API keys configured, commercial refresh skipped",
+                note="AIRLABS_API_KEY missing – bulk enrichment disabled",
             )
             return
 
-        merged: dict[str, Any] = {
-            "fetched_at": _utc_now(),
-            "profile": settings.app_profile,
-            "sources": {},
-        }
-        refreshed = 0
-
-        if has_aero:
-            try:
-                merged["sources"]["aerodatabox"] = await self._fetch_aerodatabox_snapshot()
-                refreshed += 1
-            except Exception as exc:  # pragma: no cover - network side effect
-                merged["sources"]["aerodatabox"] = {"error": str(exc)}
-
-        if has_aviationstack:
-            try:
-                merged["sources"]["aviationstack"] = await self._fetch_aviationstack_snapshot()
-                refreshed += 1
-            except Exception as exc:  # pragma: no cover - network side effect
-                merged["sources"]["aviationstack"] = {"error": str(exc)}
-
-        if refreshed == 0:
-            errors = [
-                value.get("error")
-                for value in merged["sources"].values()
-                if isinstance(value, dict) and value.get("error")
-            ]
-            raise RuntimeError("; ".join(errors) if errors else "commercial refresh failed")
-
-        async with self._lock:
-            self._commercial_cache = merged
-        enriched_count = await self._enrich_flight_details_from_commercial(merged)
-        await self._record_success("commercial", source="aerodatabox+aviationstack", count=enriched_count)
-
-    async def _enrich_flight_details_from_commercial(self, merged: dict[str, Any]) -> int:
-        """Parse commercial API payloads and persist FlightDetail extra fields. Returns upserted count."""
+        flights = await self._fetch_airlabs_bulk_snapshot()
         count = 0
-        sources = merged.get("sources") or {}
-
-        # --- AeroDataBox ---
-        aero = sources.get("aerodatabox") or {}
-        raw_aero = aero.get("raw") or {}
-        for direction in ("arrivals", "departures"):
-            entries = raw_aero.get(direction) if isinstance(raw_aero, dict) else None
-            if not isinstance(entries, list):
+        for f in flights:
+            cs = f.get("flight_icao") or f.get("flight_iata")
+            if not cs:
                 continue
-            for entry in entries:
-                if not isinstance(entry, dict):
-                    continue
-                number = (entry.get("number") or "").strip().replace(" ", "")
-                if not number:
-                    continue
-                dep_info = entry.get("departure") or {}
-                arr_info = entry.get("arrival") or {}
-                dep_iata = dep_info.get("airport", {}).get("iata") if isinstance(dep_info, dict) else None
-                arr_iata = arr_info.get("airport", {}).get("iata") if isinstance(arr_info, dict) else None
-                aircraft = entry.get("aircraft") or {}
-                ac_type = aircraft.get("model") if isinstance(aircraft, dict) else None
-                status_raw = entry.get("status") or "enroute"
-                await self._flight_store.upsert_detail_extra(
-                    number,
-                    departure_airport=dep_iata,
-                    arrival_airport=arr_iata,
-                    aircraft_type=ac_type,
-                    status=status_raw,
-                    source="aerodatabox",
-                )
-                count += 1
+            dep = f.get("dep_iata") or f.get("dep_icao")
+            arr = f.get("arr_iata") or f.get("arr_icao")
+            ac = f.get("aircraft_icao")
+            status = f.get("status") or "en-route"
+            await self._flight_store.upsert_detail_extra(
+                cs,
+                departure_airport=dep,
+                arrival_airport=arr,
+                aircraft_type=ac,
+                status=status,
+                source="airlabs",
+            )
+            count += 1
 
-        # --- Aviationstack ---
-        avi = sources.get("aviationstack") or {}
-        raw_avi = avi.get("raw") or {}
-        data_list = raw_avi.get("data") if isinstance(raw_avi, dict) else None
-        if isinstance(data_list, list):
-            for entry in data_list:
-                if not isinstance(entry, dict):
-                    continue
-                fl_info = entry.get("flight") or {}
-                iata_cs = (fl_info.get("iata") or "").strip().replace(" ", "")
-                if not iata_cs:
-                    continue
-                dep_iata = (entry.get("departure") or {}).get("iata")
-                arr_iata = (entry.get("arrival") or {}).get("iata")
-                aircraft = entry.get("aircraft") or {}
-                ac_type = aircraft.get("iata") if isinstance(aircraft, dict) else None
-                status_raw = entry.get("flight_status") or "enroute"
-                await self._flight_store.upsert_detail_extra(
-                    iata_cs,
-                    departure_airport=dep_iata,
-                    arrival_airport=arr_iata,
-                    aircraft_type=ac_type,
-                    status=status_raw,
-                    source="aviationstack",
-                )
-                count += 1
+        logger.info("AirLabs bulk snapshot: %d flights enriched", count)
+        await self._record_success("commercial", source="airlabs", count=count)
 
-        return count
+    async def _fetch_airlabs_bulk_snapshot(self) -> list[dict[str, Any]]:
+        """Call AirLabs /flights with the configured bbox and return the raw list.
+
+        The response is a plain JSON array – each element contains ``flight_icao``,
+        ``dep_iata``, ``arr_iata``, ``aircraft_icao``, ``status`` and more.
+        One call here covers *all* flights in the area, so quota cost is O(1)
+        rather than O(unique callsigns).
+
+        AirLabs bbox format: SW-lat, SW-lon, NE-lat, NE-lon
+        Our OPENSKY_BBOX format: lamin, lamax, lomin, lomax
+        Conversion: lamin,lomin → SW; lamax,lomax → NE
+        """
+        session = self._require_session()
+        url = f"{settings.airlabs_base_url.rstrip('/')}/flights"
+        params: dict[str, str] = {"api_key": settings.airlabs_api_key}
+
+        if settings.opensky_bbox:
+            try:
+                lamin, lamax, lomin, lomax = [
+                    float(x.strip()) for x in settings.opensky_bbox.split(",")
+                ]
+                params["bbox"] = f"{lamin},{lomin},{lamax},{lomax}"
+            except ValueError:
+                logger.warning("OPENSKY_BBOX format invalid, fetching without bbox")
+
+        async with session.get(url, params=params) as resp:
+            if resp.status == 429:
+                logger.warning("AirLabs rate-limited (429) on bulk snapshot, skipping")
+                return []
+            if resp.status != 200:
+                text = await resp.text()
+                raise RuntimeError(f"AirLabs HTTP {resp.status}: {text[:200]}")
+            payload = await resp.json(content_type=None)
+
+        if not isinstance(payload, list):
+            # Free plan wraps response as {"request":{...}, "response":[...]}
+            if isinstance(payload, dict) and isinstance(payload.get("response"), list):
+                return payload["response"]
+            # Log the shape for diagnosis without leaking full payload
+            keys = list(payload.keys()) if isinstance(payload, dict) else type(payload).__name__
+            logger.warning("AirLabs bulk snapshot: unexpected response shape (keys=%s)", keys)
+            return []
+
+        return payload
 
     async def _fetch_opensky_snapshot(self) -> list[FlightBrief]:
         session = self._require_session()
 
-        params: dict[str, float] = {}
+        # extended=1 requests aircraft category field (index 17) at no extra credit cost
+        params: dict[str, Any] = {"extended": 1}
         if settings.opensky_bbox:
             try:
                 lamin, lamax, lomin, lomax = [float(item.strip()) for item in settings.opensky_bbox.split(",")]
-                params = {"lamin": lamin, "lamax": lamax, "lomin": lomin, "lomax": lomax}
+                params.update({"lamin": lamin, "lamax": lamax, "lomin": lomin, "lomax": lomax})
             except ValueError as exc:
                 raise RuntimeError("OPENSKY_BBOX format invalid") from exc
 
@@ -409,6 +441,9 @@ class UnifiedDataPipeline:
             if not icao24:
                 continue
 
+            # extended=1: index 17 is aircraft category (may be absent in old responses)
+            category = int(row[17]) if len(row) >= 18 and row[17] is not None else None
+
             flights.append(
                 FlightBrief(
                     flight_id=f"icao24-{icao24}",
@@ -418,11 +453,47 @@ class UnifiedDataPipeline:
                     heading=heading,
                     speed_kts=speed_kts,
                     altitude_ft=altitude_ft,
+                    aircraft_category=category,
                     updated_at=now,
                 )
             )
 
         return flights
+
+    async def _fetch_openweather_by_coords(self, lat: float, lon: float) -> dict[str, Any]:
+        """Fetch current weather for a lat/lon coordinate via OpenWeather /weather."""
+        session = self._require_session()
+        url = f"{settings.openweather_base_url.rstrip('/')}/weather"
+        params = {
+            "lat": lat,
+            "lon": lon,
+            "appid": settings.openweather_api_key,
+            "units": "metric",
+        }
+
+        async with session.get(url, params=params) as resp:
+            if resp.status != 200:
+                text = await resp.text()
+                raise RuntimeError(f"OpenWeather HTTP {resp.status}: {text[:200]}")
+            payload = await resp.json(content_type=None)
+
+        weather = payload.get("weather") or []
+        main = payload.get("main") or {}
+        wind = payload.get("wind") or {}
+
+        return {
+            "provider": "openweather",
+            "city": payload.get("name"),
+            "lat": lat,
+            "lon": lon,
+            "fetched_at": _utc_now(),
+            "weather": weather[0] if weather else None,
+            "temperature_c": main.get("temp"),
+            "humidity": main.get("humidity"),
+            "pressure": main.get("pressure"),
+            "wind": wind,
+            "raw": payload,
+        }
 
     async def _fetch_openweather_snapshot(self) -> dict[str, Any]:
         session = self._require_session()
@@ -455,124 +526,37 @@ class UnifiedDataPipeline:
             "raw": payload,
         }
 
-    async def _fetch_aerodatabox_snapshot(self) -> dict[str, Any]:
+    async def _fetch_openweather_air_quality(self, lat: float, lon: float) -> dict[str, Any]:
         session = self._require_session()
-        # Build a dynamic 12-hour window ending now (handles cross-midnight correctly).
-        from datetime import timedelta
-        now = _utc_now()
-        start_dt = now - timedelta(hours=12)
-        window_start = start_dt.strftime("%Y-%m-%dT%H:%M")
-        window_end = now.strftime("%Y-%m-%dT%H:%M")
-
-        # Empty config → use full global airport list; otherwise honour explicit override.
-        override = settings.aerodatabox_airport_iata.strip()
-        iata_codes = (
-            [code.strip() for code in override.split(",") if code.strip()]
-            if override
-            else _GLOBAL_AIRPORTS
-        )
-        logger.info("AeroDataBox: querying %d airports", len(iata_codes))
-        headers = {
-            "x-rapidapi-key": settings.aerodatabox_api_key,
-            "x-rapidapi-host": settings.aerodatabox_api_host,
-        }
-        params = {"withLeg": str(settings.aerodatabox_with_leg).lower()}
-
-        all_arrivals: list[dict] = []
-        all_departures: list[dict] = []
-
-        for iata in iata_codes:
-            path = f"flights/airports/iata/{iata}/{window_start}/{window_end}"
-            url = f"{settings.aerodatabox_base_url.rstrip('/')}/{path}"
-            try:
-                async with session.get(url, headers=headers, params=params) as resp:
-                    if resp.status != 200:
-                        text = await resp.text()
-                        logger.warning("AeroDataBox %s HTTP %d: %s", iata, resp.status, text[:200])
-                    else:
-                        payload = await resp.json(content_type=None)
-                        arrivals = payload.get("arrivals") if isinstance(payload, dict) else []
-                        departures = payload.get("departures") if isinstance(payload, dict) else []
-                        if isinstance(arrivals, list):
-                            all_arrivals.extend(arrivals)
-                        if isinstance(departures, list):
-                            all_departures.extend(departures)
-                        logger.info(
-                            "AeroDataBox %s: +%d arrivals +%d departures",
-                            iata,
-                            len(arrivals) if isinstance(arrivals, list) else 0,
-                            len(departures) if isinstance(departures, list) else 0,
-                        )
-            except Exception as exc:
-                logger.warning("AeroDataBox %s fetch failed: %s", iata, exc)
-            finally:
-                # BASIC plan rate limit: 1 req/s. Always sleep, even on error/429.
-                await asyncio.sleep(1.1)
-
-        return {
-            "fetched_at": _utc_now(),
-            "arrivals_count": len(all_arrivals),
-            "departures_count": len(all_departures),
-            "raw": {"arrivals": all_arrivals, "departures": all_departures},
+        url = f"{settings.openweather_base_url.rstrip('/')}/air_pollution"
+        params = {
+            "lat": lat,
+            "lon": lon,
+            "appid": settings.openweather_api_key,
         }
 
-    async def _fetch_aviationstack_snapshot(self) -> dict[str, Any]:
-        """Fetch ALL available flights from Aviationstack via automatic pagination."""
-        session = self._require_session()
-        url = f"{settings.aviationstack_base_url.rstrip('/')}/flights"
-        page_size = 100  # Aviationstack maximum per request
-        _HARD_LIMIT = 5000  # safety ceiling to avoid runaway billing
+        async with session.get(url, params=params) as resp:
+            if resp.status != 200:
+                text = await resp.text()
+                raise RuntimeError(f"OpenWeather air_pollution HTTP {resp.status}: {text[:200]}")
+            payload = await resp.json(content_type=None)
 
-        all_data: list[dict] = []
-        offset = 0
-        total_reported = None
+        items = payload.get("list") or []
+        aqi = None
+        components: dict[str, Any] = {}
+        if items:
+            first = items[0]
+            aqi = (first.get("main") or {}).get("aqi")
+            components = first.get("components") or {}
 
-        while True:
-            params = {
-                "access_key": settings.aviationstack_access_key,
-                "limit": page_size,
-                "offset": offset,
-            }
-            async with session.get(url, params=params) as resp:
-                if resp.status != 200:
-                    text = await resp.text()
-                    raise RuntimeError(f"Aviationstack HTTP {resp.status}: {text[:200]}")
-                payload = await resp.json(content_type=None)
-
-            data = payload.get("data") if isinstance(payload, dict) else None
-            if not isinstance(data, list) or len(data) == 0:
-                break
-
-            all_data.extend(data)
-            pagination = payload.get("pagination") if isinstance(payload, dict) else {}
-            if total_reported is None:
-                total_reported = (pagination or {}).get("total", 0)
-
-            offset += len(data)
-            logger.info(
-                "Aviationstack page offset=%d fetched=%d total=%s",
-                offset - len(data), len(data), total_reported,
-            )
-
-            # Stop when all pages consumed or hard limit reached
-            if len(data) < page_size:
-                break
-            if total_reported and offset >= total_reported:
-                break
-            if len(all_data) >= _HARD_LIMIT:
-                logger.warning(
-                    "Aviationstack: reached hard limit %d, stopping pagination", _HARD_LIMIT
-                )
-                break
-
-            await asyncio.sleep(0.3)  # polite pause between pages
-
-        logger.info("Aviationstack: total fetched=%d (reported total=%s)", len(all_data), total_reported)
         return {
+            "provider": "openweather",
+            "lat": lat,
+            "lon": lon,
             "fetched_at": _utc_now(),
-            "item_count": len(all_data),
-            "pagination": {"total": total_reported, "fetched": len(all_data)},
-            "raw": {"data": all_data},
+            "aqi": aqi,
+            "components": components,
+            "raw": payload,
         }
 
     async def _record_success(

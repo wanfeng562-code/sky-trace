@@ -1,7 +1,13 @@
 from datetime import datetime
+from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Resolve .env relative to this file's package root (server/), not CWD.
+# This ensures the correct .env is loaded regardless of where uvicorn is launched from.
+_SERVER_ROOT = Path(__file__).resolve().parent.parent.parent
+_ENV_FILE = _SERVER_ROOT / ".env"
 
 
 class Settings(BaseSettings):
@@ -23,16 +29,14 @@ class Settings(BaseSettings):
     realtime_fallback_to_mock: bool = True
 
     # Development profile OpenSky polling policy:
-    # - active window starts at 08:00
-    # - active interval is 15s
-    # - idle interval is 40s
-    # - active window length is derived from daily budget
-    dev_realtime_use_active_window: bool = True
+    # - use_active_window=False: always use idle_interval (flat 90 s, ~960 calls/day, 3840 pts/day)
+    # - use_active_window=True: burst to active_interval during start_hour:start_minute window
+    dev_realtime_use_active_window: bool = False
     dev_realtime_active_interval_seconds: int = 15
-    dev_realtime_idle_interval_seconds: int = 40
+    dev_realtime_idle_interval_seconds: int = 90
     dev_realtime_active_start_hour: int = 8
     dev_realtime_active_start_minute: int = 0
-    dev_realtime_daily_budget_calls: int = 4000
+    dev_realtime_daily_budget_calls: int = 1000
 
     dev_realtime_interval_seconds: int = 30
     dev_environment_interval_seconds: int = 300
@@ -42,27 +46,30 @@ class Settings(BaseSettings):
     release_environment_interval_seconds: int = 120
     release_commercial_interval_seconds: int = 86400
 
-    http_timeout_seconds: int = 20
+    http_timeout_seconds: int = 30
 
     opensky_base_url: str = "https://opensky-network.org/api"
     opensky_username: str = ""
     opensky_password: str = ""
     opensky_bbox: str = ""
 
-    aerodatabox_api_key: str = ""
-    aerodatabox_api_host: str = "aerodatabox.p.rapidapi.com"
-    aerodatabox_base_url: str = "https://aerodatabox.p.rapidapi.com"
-    aerodatabox_airport_iata: str = "SZX"
-    aerodatabox_test_path: str = "flights/airports/iata/SZX/2026-04-13T00:00/2026-04-13T12:00"
-    aerodatabox_with_leg: bool = True
-
-    aviationstack_access_key: str = ""
-    aviationstack_base_url: str = "http://api.aviationstack.com/v1"
-    aviationstack_limit: int = 20
+    # AirLabs on-demand flight enrichment (replaces AeroDataBox airport-scan)
+    # Free tier: 1,000 requests/month.  Fill in AIRLABS_API_KEY in .env to enable.
+    airlabs_api_key: str = ""
+    airlabs_base_url: str = "https://airlabs.co/api/v9"
+    # How long a cached bulk enrichment record stays fresh (hours). Default 24 h
+    # aligns with the daily refresh cadence so records never become stale.
+    airlabs_enrich_ttl_hours: int = 24
 
     openweather_api_key: str = ""
     openweather_city: str = "Guangzhou"
     openweather_base_url: str = "https://api.openweathermap.org/data/2.5"
+    # Reference coordinates for /air_pollution (falls back to city coord from weather response)
+    openweather_lat: float = 23.1
+    openweather_lon: float = 113.3
+    # Comma-separated IATA codes for multi-hub global weather collection.
+    # Leave empty to use the built-in default list of 20 global aviation hubs.
+    openweather_hubs: str = ""
 
     sqlite_path: str = "./data/sky_trace.db"
 
@@ -70,7 +77,7 @@ class Settings(BaseSettings):
     ws_heartbeat_seconds: int = 20
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_ENV_FILE),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",

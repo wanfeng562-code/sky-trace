@@ -12,6 +12,7 @@ class FlightBrief(BaseModel):
     heading: int | None = None
     speed_kts: int | None = None
     altitude_ft: int | None = None
+    aircraft_category: int | None = None  # OpenSky extended=1: 0=unknown,2=light,4=large,6=heavy,8=rotorcraft,14=UAV
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

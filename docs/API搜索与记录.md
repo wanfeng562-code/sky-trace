@@ -7,18 +7,30 @@
     - 能够获取实时状态、位置更新、历史轨迹。
     - 链接：https://github.com/openskynetwork/opensky-api
 
-## AeroDataBox(航班详情与搜索接口)
+## AeroDataBox(航班详情与搜索接口)(limit)
 
     - 每月约 600 次调用(通过rapidapi，分层级限制调用)
     - 获取航班延误统计、航站楼/登机口、机型参数。
     - 链接：https://aerodatabox.com/
     - ![alt text](image.png)
 
-## Aviationstack
+## FlightAware (AeroAPI v3)
+行业标杆，数据极其精准。
+免费额度：个人/学术账户每月有 $5.00 的免费额度。
+字段对应：提供非常详尽的 origin, destination, aircraft_type, status。
+优点：它提供的 ident（航班号）匹配率非常高。
+但是只能选择一个空域
+
+## Aviationstack(limit)
 
     - 免费的每月100次调用
     - 获取实时航班查询、历史记录、航线信息。
     - 链接：https://github.com/apilayer/aviationstack
+
+## AirLabs
+一个相对小众但对开发者很友好的数据源。
+免费额度：每月 1,000 次请求。
+特点：它的 flights 接口可以直接返回当前正在飞行的航班详情，非常适合用来补全 OpenSky 的数据。
 
 ## Mapbox(地图底图接口)
 

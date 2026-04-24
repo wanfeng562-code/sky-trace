@@ -20,6 +20,13 @@ async def get_weather_snapshot() -> ApiResponse:
     return ApiResponse(data=await unified_pipeline.get_weather_cache())
 
 
+@router.get("/air_quality")
+async def get_air_quality_snapshot() -> ApiResponse:
+    """Return cached air quality snapshot (AQI + 8 pollutants) from OpenWeather."""
+
+    return ApiResponse(data=await unified_pipeline.get_air_quality_cache())
+
+
 @router.get("/commercial")
 async def get_commercial_snapshot() -> ApiResponse:
     """Return cached commercial-layer snapshot fetched by backend collector."""
@@ -47,6 +54,7 @@ async def get_unified_snapshot(
                 "items": items,
             },
             "weather": await unified_pipeline.get_weather_cache(),
+            "air_quality": await unified_pipeline.get_air_quality_cache(),
             "commercial": await unified_pipeline.get_commercial_cache(),
         }
     )
