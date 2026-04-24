@@ -76,6 +76,13 @@ class Settings(BaseSettings):
     cors_allow_origins: str = "http://localhost:5173"
     ws_heartbeat_seconds: int = 20
 
+    # Historical playback settings
+    # Interval between saved fleet snapshots (seconds).  Lower = finer playback,
+    # higher storage consumption.  Default 300 s → ≈ 288 snapshots/day.
+    playback_snapshot_interval_seconds: int = 300
+    # How long playback snapshots are retained before cleanup (hours).
+    playback_ttl_hours: int = 24
+
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE),
         env_file_encoding="utf-8",

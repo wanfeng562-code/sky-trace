@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import math
 from datetime import datetime, timezone
 from typing import Any, Literal
 
@@ -42,6 +44,18 @@ _HUB_COORDS: dict[str, tuple[float, float]] = {
 _DEFAULT_HUBS: list[str] = list(_HUB_COORDS.keys())
 
 
+def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Return great-circle distance in kilometres between two lat/lon points."""
+    R = 6_371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+    )
+    return R * 2 * math.asin(math.sqrt(a))
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -72,6 +86,16 @@ class UnifiedDataPipeline:
         self._weather_cache: dict[str, Any] = {}
         self._air_quality_cache: dict[str, Any] = {}
         self._commercial_cache: dict[str, Any] = {}
+
+        # Periodic fleet snapshots for historical playback.
+        self._last_snapshot_saved_at: datetime | None = None
+
+        # Per-API daily quota counters.  Reset automatically when date changes.
+        self._quota: dict[str, dict[str, Any]] = {
+            "opensky": {"date": None, "calls": 0, "daily_budget": settings.dev_realtime_daily_budget_calls},
+            "openweather": {"date": None, "calls": 0},
+            "airlabs": {"date": None, "calls": 0},
+        }
 
         self._status: dict[str, dict[str, Any]] = {
             "profile": {
@@ -231,6 +255,10 @@ class UnifiedDataPipeline:
         await self._flight_store.apply_updates(updates)
         await self._record_success("realtime", source=source, count=len(updates), note=note)
 
+        # Persist a compact snapshot for historical playback (throttled).
+        if updates:
+            await self._maybe_save_snapshot(updates)
+
         if self._broadcast_manager and updates:
             event = WsEvent(
                 event="snapshot",
@@ -285,6 +313,29 @@ class UnifiedDataPipeline:
             *[_fetch_hub(iata, lat, lon) for iata, (lat, lon) in hubs.items()],
             return_exceptions=True,
         )
+
+        # One-shot retry for hubs whose weather fetch returned None (e.g. transient timeout)
+        failed_hubs: dict[str, tuple[float, float]] = {
+            r[0]: hubs[r[0]]
+            for r in results
+            if isinstance(r, tuple) and r[1] is None and r[0] in hubs
+        }
+        if failed_hubs:
+            logger.info(
+                "Retrying %d failed hub(s) after 5 s: %s",
+                len(failed_hubs),
+                sorted(failed_hubs),
+            )
+            await asyncio.sleep(5)
+            retry_results = await asyncio.gather(
+                *[_fetch_hub(iata, lat, lon) for iata, (lat, lon) in failed_hubs.items()],
+                return_exceptions=True,
+            )
+            # Drop original None-results for retried hubs, append retry outcomes
+            results = [
+                r for r in results
+                if not (isinstance(r, tuple) and r[0] in failed_hubs)
+            ] + list(retry_results)
 
         new_weather: dict[str, dict] = {}
         new_aq: dict[str, dict] = {}
@@ -577,6 +628,16 @@ class UnifiedDataPipeline:
                 entry["last_error_at"] = _utc_now()
             entry["success_count"] = int(entry["success_count"]) + 1
 
+            # Quota tracking: increment the per-API daily counter.
+            _quota_key = {"realtime": "opensky", "environment": "openweather", "commercial": "airlabs"}.get(layer)
+            if _quota_key and count > 0:
+                today = _utc_now().date().isoformat()
+                q = self._quota[_quota_key]
+                if q["date"] != today:
+                    q["date"] = today
+                    q["calls"] = 0
+                q["calls"] += 1
+
     async def _record_failure(self, layer: LayerName, message: str) -> None:
         async with self._lock:
             entry = self._status[layer]
@@ -588,3 +649,134 @@ class UnifiedDataPipeline:
         if not self._session:
             raise RuntimeError("HTTP session is not ready")
         return self._session
+
+    # ------------------------------------------------------------------
+    # Snapshot / playback helpers
+    # ------------------------------------------------------------------
+
+    async def _maybe_save_snapshot(self, flights: list[FlightBrief]) -> None:
+        """Throttled: save a compact fleet snapshot at most once per
+        ``playback_snapshot_interval_seconds`` seconds.
+        """
+        now = _utc_now()
+        if self._last_snapshot_saved_at is not None:
+            elapsed = (now - self._last_snapshot_saved_at).total_seconds()
+            if elapsed < settings.playback_snapshot_interval_seconds:
+                return
+
+        compact = [
+            {
+                "id": f.flight_id,
+                "lat": f.lat,
+                "lon": f.lon,
+                "alt": f.altitude_ft,
+                "spd": f.speed_kts,
+                "hdg": f.heading,
+                "cat": f.aircraft_category,
+                "cs": f.callsign,
+            }
+            for f in flights
+        ]
+        data_json = json.dumps(compact, separators=(",", ":"))
+
+        try:
+            from app.services.db import cleanup_old_snapshots, save_flight_snapshot
+
+            await save_flight_snapshot(now.isoformat(), data_json)
+            removed = await cleanup_old_snapshots(settings.playback_ttl_hours)
+            if removed:
+                logger.debug("Playback TTL cleanup: removed %d old snapshots", removed)
+        except Exception as exc:
+            logger.warning("Failed to save flight snapshot: %s", exc)
+            return
+
+        self._last_snapshot_saved_at = now
+
+    # ------------------------------------------------------------------
+    # Weather lookup helpers
+    # ------------------------------------------------------------------
+
+    async def get_nearest_hub_weather(self, lat: float, lon: float) -> dict[str, Any]:
+        """Return cached weather + AQI for the nearest hub that has cached data.
+
+        Iterates hubs in ascending distance order and returns the first one
+        that has an entry in the weather cache.  Falls back to the nearest hub
+        (with null weather) if none of the hubs have been collected yet.
+        No external API call is made.
+        """
+        # Sort all hubs by distance from the query point.
+        ranked = sorted(
+            _HUB_COORDS.items(),
+            key=lambda kv: _haversine(lat, lon, kv[1][0], kv[1][1]),
+        )
+
+        async with self._lock:
+            weather_snap = dict(self._weather_cache)
+            aq_snap = dict(self._air_quality_cache)
+
+        # Find the nearest hub that actually has cached data.
+        for iata, (hlat, hlon) in ranked:
+            if iata in weather_snap:
+                return {
+                    "hub_iata": iata,
+                    "distance_km": round(_haversine(lat, lon, hlat, hlon), 1),
+                    "weather": weather_snap[iata],
+                    "air_quality": aq_snap.get(iata),
+                }
+
+        # Fallback: return nearest hub regardless (cache not populated yet).
+        best_iata, (blat, blon) = ranked[0]
+        return {
+            "hub_iata": best_iata,
+            "distance_km": round(_haversine(lat, lon, blat, blon), 1),
+            "weather": None,
+            "air_quality": None,
+        }
+
+    async def get_hub_weather_for_iata(self, iata: str | None) -> dict[str, Any] | None:
+        """Return cached weather + AQI for the given IATA code, or None if not cached."""
+        if not iata:
+            return None
+        key = iata.strip().upper()
+        async with self._lock:
+            weather = self._weather_cache.get(key)
+            aq = self._air_quality_cache.get(key)
+        if weather is None and aq is None:
+            return None
+        return {"weather": weather, "air_quality": aq}
+
+    # ------------------------------------------------------------------
+    # Quota monitoring
+    # ------------------------------------------------------------------
+
+    async def get_quota(self) -> dict[str, Any]:
+        """Return today’s API call counts and configured budgets."""
+        async with self._lock:
+            osky = self._quota["opensky"]
+            ow = self._quota["openweather"]
+            al = self._quota["airlabs"]
+            return {
+                "opensky": {
+                    "today_date": osky["date"],
+                    "today_calls": osky["calls"],
+                    "daily_budget": osky["daily_budget"],
+                    "remaining": max(0, osky["daily_budget"] - osky["calls"]),
+                    "note": "4 API credits per call for registered users",
+                },
+                "openweather": {
+                    "today_date": ow["date"],
+                    "today_calls": ow["calls"],
+                    "note": "Each environment cycle = 20 hub calls (weather + AQI)",
+                },
+                "airlabs": {
+                    "today_date": al["date"],
+                    "today_calls": al["calls"],
+                    "monthly_budget": 1000,
+                    "note": "1 bulk call per commercial cycle covers all flights",
+                },
+                "playback": {
+                    "snapshot_interval_seconds": settings.playback_snapshot_interval_seconds,
+                    "ttl_hours": settings.playback_ttl_hours,
+                    "last_snapshot_at": self._last_snapshot_saved_at,
+                },
+            }

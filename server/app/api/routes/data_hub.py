@@ -13,6 +13,19 @@ async def get_collection_status() -> ApiResponse:
     return ApiResponse(data=await unified_pipeline.get_status())
 
 
+@router.get("/weather/nearest")
+async def get_nearest_weather(
+    lat: float = Query(description="Latitude of the query point"),
+    lon: float = Query(description="Longitude of the query point"),
+) -> ApiResponse:
+    """Return cached weather + AQI for the hub nearest to the given coordinates.
+
+    No external API call is made – data is served from the in-memory environment
+    cache populated every 5 minutes by the backend collector.
+    """
+    return ApiResponse(data=await unified_pipeline.get_nearest_hub_weather(lat, lon))
+
+
 @router.get("/weather")
 async def get_weather_snapshot() -> ApiResponse:
     """Return cached environment-layer snapshot fetched by backend collector."""
@@ -32,6 +45,13 @@ async def get_commercial_snapshot() -> ApiResponse:
     """Return cached commercial-layer snapshot fetched by backend collector."""
 
     return ApiResponse(data=await unified_pipeline.get_commercial_cache())
+
+
+@router.get("/quota")
+async def get_quota() -> ApiResponse:
+    """Return today's API call counts and configured budgets for all data sources."""
+
+    return ApiResponse(data=await unified_pipeline.get_quota())
 
 
 @router.get("/snapshot")
