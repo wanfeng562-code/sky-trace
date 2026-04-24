@@ -138,6 +138,7 @@ class UnifiedDataPipeline:
         self._running = False
         self._tasks: list[asyncio.Task] = []
         self._session: aiohttp.ClientSession | None = None
+        self._proxy: str | None = None
 
     async def start(self) -> None:
         if self._running:
@@ -145,6 +146,9 @@ class UnifiedDataPipeline:
 
         timeout = aiohttp.ClientTimeout(total=settings.http_timeout_seconds)
         self._session = aiohttp.ClientSession(timeout=timeout)
+        self._proxy = settings.http_proxy or None
+        if self._proxy:
+            logger.info("HTTP proxy configured: %s", self._proxy)
         self._running = True
         self._tasks = [
             asyncio.create_task(self._run_layer("realtime"), name="collector-realtime"),
@@ -242,10 +246,12 @@ class UnifiedDataPipeline:
                 if not settings.realtime_fallback_to_mock:
                     raise
                 reason = str(exc).strip() or exc.__class__.__name__
+                logger.warning("OpenSky failed (%s: %s), falling back to mock data", type(exc).__name__, reason)
                 updates = self._mock_collector.collect()
                 source = "mock-fallback"
                 note = f"OpenSky failed, fallback to mock: {reason}"
             if not updates and settings.realtime_fallback_to_mock:
+                logger.warning("OpenSky returned empty snapshot, falling back to mock data")
                 updates = self._mock_collector.collect()
                 source = "mock-fallback"
                 note = "OpenSky returned empty snapshot, fallback to mock"
@@ -423,7 +429,7 @@ class UnifiedDataPipeline:
             except ValueError:
                 logger.warning("OPENSKY_BBOX format invalid, fetching without bbox")
 
-        async with session.get(url, params=params) as resp:
+        async with session.get(url, params=params, proxy=self._proxy) as resp:
             if resp.status == 429:
                 logger.warning("AirLabs rate-limited (429) on bulk snapshot, skipping")
                 return []
@@ -460,7 +466,7 @@ class UnifiedDataPipeline:
             auth = aiohttp.BasicAuth(settings.opensky_username, settings.opensky_password)
 
         url = f"{settings.opensky_base_url.rstrip('/')}/states/all"
-        async with session.get(url, params=params or None, auth=auth) as resp:
+        async with session.get(url, params=params or None, auth=auth, proxy=self._proxy) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"OpenSky HTTP {resp.status}: {text[:200]}")
@@ -522,7 +528,7 @@ class UnifiedDataPipeline:
             "units": "metric",
         }
 
-        async with session.get(url, params=params) as resp:
+        async with session.get(url, params=params, proxy=self._proxy) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"OpenWeather HTTP {resp.status}: {text[:200]}")
@@ -555,7 +561,7 @@ class UnifiedDataPipeline:
             "units": "metric",
         }
 
-        async with session.get(url, params=params) as resp:
+        async with session.get(url, params=params, proxy=self._proxy) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"OpenWeather HTTP {resp.status}: {text[:200]}")
@@ -586,7 +592,7 @@ class UnifiedDataPipeline:
             "appid": settings.openweather_api_key,
         }
 
-        async with session.get(url, params=params) as resp:
+        async with session.get(url, params=params, proxy=self._proxy) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"OpenWeather air_pollution HTTP {resp.status}: {text[:200]}")

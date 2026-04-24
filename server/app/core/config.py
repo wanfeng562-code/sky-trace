@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     release_commercial_interval_seconds: int = 86400
 
     http_timeout_seconds: int = 30
+    # HTTP/HTTPS proxy for aiohttp requests (e.g. "http://127.0.0.1:7890").
+    # Leave empty to disable proxy.
+    http_proxy: str = ""
 
     opensky_base_url: str = "https://opensky-network.org/api"
     opensky_username: str = ""
