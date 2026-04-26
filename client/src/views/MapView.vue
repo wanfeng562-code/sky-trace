@@ -17,13 +17,22 @@
 				<div v-else-if="!store.flights.length" class="map-status">
 					暂无航班数据，等待后端返回快照。
 				</div>
+				<FlightDetailCard
+					:detail="store.flightDetail"
+					:loading="store.detailLoading"
+					@close="handleSelectFlight(null)"
+				/>
 			</div>
 		</section>
 
 		<FlightListPanel
-			:flights="store.flights"
+			:flights="store.filteredFlights"
 			:selected-flight-id="store.selectedFlightId"
-			@select="store.selectFlight"
+			:filter-status="store.filterStatus"
+			:ws-online="store.wsOnline"
+			@select="handleSelectFlight"
+			@search="store.searchKeyword = $event"
+			@filter="store.filterStatus = $event"
 		/>
 	</div>
 </template>
@@ -37,6 +46,7 @@
 	} from "maplibre-gl";
 	import "maplibre-gl/dist/maplibre-gl.css";
 
+import FlightDetailCard from "../components/FlightDetailCard.vue";
 	import FlightListPanel from "../components/FlightListPanel.vue";
 	import { useFlightStore } from "../stores/flight";
 	import type { FlightBrief } from "../types/flight";
@@ -51,6 +61,11 @@
 	const mapContainer = ref<HTMLElement | null>(null);
 	const map = ref<MapLibreMap | null>(null);
 	const hasFittedInitialBounds = ref(false);
+
+async function handleSelectFlight(flightId: string | null) {
+	await store.selectFlight(flightId);
+	store.loadFlightDetail(flightId);
+}
 
 	function toGeoJson(flights: FlightBrief[]): GeoJSON.FeatureCollection<GeoJSON.Point> {
 		return {
@@ -282,7 +297,7 @@
 
 				const flightId = feature.properties?.flight_id;
 				if (typeof flightId === "string") {
-					store.selectFlight(flightId);
+					handleSelectFlight(flightId);
 				}
 
 				new maplibregl.Popup({ offset: 12 })
