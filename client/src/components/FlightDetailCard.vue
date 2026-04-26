@@ -60,22 +60,8 @@
 
 <script setup lang="ts">
 	import { computed } from "vue";
+	import WeatherBlock from "./WeatherBlock.vue";
 	import type { FlightDetail } from "../types/flight";
-
-	const WeatherBlock = {
-		props: ["weather"],
-		template: `
-      <table class="info-table">
-        <tbody>
-          <tr><td>温度</td><td>{{ weather.temp_c ?? "--" }} °C</td></tr>
-          <tr><td>湿度</td><td>{{ weather.humidity_pct ?? "--" }} %</td></tr>
-          <tr><td>风速</td><td>{{ weather.wind_speed_mps ?? "--" }} m/s</td></tr>
-          <tr><td>能见度</td><td>{{ weather.visibility_m ?? "--" }} m</td></tr>
-          <tr v-if="weather.description"><td>天气</td><td>{{ weather.description }}</td></tr>
-        </tbody>
-      </table>
-    `,
-	};
 
 	const props = defineProps<{
 		detail: FlightDetail | null;
