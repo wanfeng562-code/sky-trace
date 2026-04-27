@@ -17,6 +17,12 @@ from app.services.mock_collector import MockCollector
 logger = logging.getLogger(__name__)
 LayerName = Literal["realtime", "environment", "commercial"]
 
+# OpenSky OAuth2 token endpoint (client credentials flow).
+_OPENSKY_TOKEN_URL = (
+    "https://auth.opensky-network.org/auth/realms/opensky-network"
+    "/protocol/openid-connect/token"
+)
+
 # Static lat/lon for top global aviation hubs used as weather sampling points.
 # Keyed by IATA airport code; overridable via OPENWEATHER_HUBS in .env.
 _HUB_COORDS: dict[str, tuple[float, float]] = {
@@ -42,6 +48,31 @@ _HUB_COORDS: dict[str, tuple[float, float]] = {
     "GRU": (-23.4356,  -46.4731), # São Paulo Guarulhos
 }
 _DEFAULT_HUBS: list[str] = list(_HUB_COORDS.keys())
+
+# Public mapping used by the /airports API endpoint.
+# Each entry: { iata, name, lat, lon }
+HUB_INFO: dict[str, dict] = {
+    "CAN": {"iata": "CAN", "name": "广州白云",        "lat": 23.3925,  "lon": 113.2988},
+    "SZX": {"iata": "SZX", "name": "深圳宝安",        "lat": 22.6395,  "lon": 113.8108},
+    "PEK": {"iata": "PEK", "name": "北京首都",        "lat": 40.0799,  "lon": 116.5833},
+    "PVG": {"iata": "PVG", "name": "上海浦东",        "lat": 31.1434,  "lon": 121.8052},
+    "HKG": {"iata": "HKG", "name": "香港国际",        "lat": 22.3080,  "lon": 113.9185},
+    "NRT": {"iata": "NRT", "name": "东京成田",        "lat": 35.7647,  "lon": 140.3864},
+    "ICN": {"iata": "ICN", "name": "首尔仁川",        "lat": 37.4602,  "lon": 126.4407},
+    "SIN": {"iata": "SIN", "name": "新加坡樟宜",      "lat": 1.3644,   "lon": 103.9915},
+    "DXB": {"iata": "DXB", "name": "迪拜国际",        "lat": 25.2528,  "lon": 55.3644},
+    "DOH": {"iata": "DOH", "name": "多哈哈马德",      "lat": 25.2609,  "lon": 51.6138},
+    "LHR": {"iata": "LHR", "name": "伦敦希思罗",      "lat": 51.4775,  "lon": -0.4614},
+    "CDG": {"iata": "CDG", "name": "巴黎戴高乐",      "lat": 49.0097,  "lon": 2.5479},
+    "FRA": {"iata": "FRA", "name": "法兰克福",        "lat": 50.0379,  "lon": 8.5622},
+    "AMS": {"iata": "AMS", "name": "阿姆斯特丹史基浦","lat": 52.3086,  "lon": 4.7639},
+    "JFK": {"iata": "JFK", "name": "纽约肯尼迪",      "lat": 40.6413,  "lon": -73.7781},
+    "LAX": {"iata": "LAX", "name": "洛杉矶国际",      "lat": 33.9425,  "lon": -118.4081},
+    "ORD": {"iata": "ORD", "name": "芝加哥奥黑尔",    "lat": 41.9742,  "lon": -87.9073},
+    "ATL": {"iata": "ATL", "name": "亚特兰大哈兹菲尔德","lat": 33.6367, "lon": -84.4281},
+    "SYD": {"iata": "SYD", "name": "悉尼金斯福德史密斯","lat": -33.9399,"lon": 151.1753},
+    "GRU": {"iata": "GRU", "name": "圣保罗瓜鲁柳斯",  "lat": -23.4356, "lon": -46.4731},
+}
 
 
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -140,6 +171,10 @@ class UnifiedDataPipeline:
         self._session: aiohttp.ClientSession | None = None
         self._proxy: str | None = None
 
+        # OAuth2 Bearer token cache for OpenSky (client-credentials flow).
+        self._opensky_token: str | None = None
+        self._opensky_token_expires_at: float = 0.0  # monotonic seconds
+
     async def start(self) -> None:
         if self._running:
             return
@@ -162,6 +197,20 @@ class UnifiedDataPipeline:
             settings.interval_seconds("environment"),
             settings.interval_seconds("commercial"),
         )
+        if settings.opensky_client_id and settings.opensky_client_secret:
+            logger.info("OpenSky auth: OAuth2 client credentials (4 000 credits/day)")
+        elif settings.opensky_username and settings.opensky_password:
+            logger.warning(
+                "OpenSky auth: Basic auth is deprecated since 2024 and is now treated as "
+                "anonymous (400 credits/day ÷ 4 credits/global-call = ~100 calls). "
+                "Set OPENSKY_CLIENT_ID and OPENSKY_CLIENT_SECRET for full 4 000 credits/day. "
+                "Create a client at https://opensky-network.org/my-opensky/account"
+            )
+        else:
+            logger.warning(
+                "OpenSky auth: no credentials configured — running as anonymous "
+                "(400 credits/day, 10-second time resolution)."
+            )
 
     async def stop(self) -> None:
         if not self._running:
@@ -449,6 +498,52 @@ class UnifiedDataPipeline:
 
         return payload
 
+    async def _get_opensky_auth(
+        self,
+    ) -> tuple[dict[str, str] | None, aiohttp.BasicAuth | None]:
+        """Return (extra_headers, auth) for OpenSky requests.
+
+        Priority:
+        1. OAuth2 Bearer token via client_id + client_secret  (4 000 credits/day)
+        2. Legacy Basic auth via username + password           (treated as anonymous →
+           400 credits/day since OpenSky deprecated Basic auth in 2024)
+        3. No credentials                                      (anonymous, 400 credits/day)
+        """
+        import time
+
+        if settings.opensky_client_id and settings.opensky_client_secret:
+            # Reuse cached token when it still has more than 30 s of lifetime left.
+            if self._opensky_token and time.monotonic() < self._opensky_token_expires_at - 30:
+                return {"Authorization": f"Bearer {self._opensky_token}"}, None
+
+            session = self._require_session()
+            async with session.post(
+                _OPENSKY_TOKEN_URL,
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": settings.opensky_client_id,
+                    "client_secret": settings.opensky_client_secret,
+                },
+                proxy=self._proxy,
+            ) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    raise RuntimeError(
+                        f"OpenSky OAuth2 token request failed ({resp.status}): {text[:200]}"
+                    )
+                token_data = await resp.json(content_type=None)
+
+            self._opensky_token = token_data["access_token"]
+            expires_in = int(token_data.get("expires_in", 1800))
+            self._opensky_token_expires_at = time.monotonic() + expires_in
+            logger.info("OpenSky OAuth2 token acquired, expires in %ds", expires_in)
+            return {"Authorization": f"Bearer {self._opensky_token}"}, None
+
+        if settings.opensky_username and settings.opensky_password:
+            return None, aiohttp.BasicAuth(settings.opensky_username, settings.opensky_password)
+
+        return None, None
+
     async def _fetch_opensky_snapshot(self) -> list[FlightBrief]:
         session = self._require_session()
 
@@ -461,12 +556,15 @@ class UnifiedDataPipeline:
             except ValueError as exc:
                 raise RuntimeError("OPENSKY_BBOX format invalid") from exc
 
-        auth = None
-        if settings.opensky_username and settings.opensky_password:
-            auth = aiohttp.BasicAuth(settings.opensky_username, settings.opensky_password)
+        extra_headers, auth = await self._get_opensky_auth()
 
         url = f"{settings.opensky_base_url.rstrip('/')}/states/all"
-        async with session.get(url, params=params or None, auth=auth, proxy=self._proxy) as resp:
+        async with session.get(
+            url, params=params or None, auth=auth, headers=extra_headers, proxy=self._proxy
+        ) as resp:
+            remaining = resp.headers.get("X-Rate-Limit-Remaining")
+            if remaining is not None:
+                logger.debug("OpenSky credits remaining today: %s", remaining)
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"OpenSky HTTP {resp.status}: {text[:200]}")

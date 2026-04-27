@@ -58,3 +58,11 @@ export interface FlightStats {
 	on_ground: number;
 	updated_at: string;
 }
+
+// 枢纽机场信息
+export interface AirportInfo {
+	iata: string;
+	name: string;
+	lat: number;
+	lon: number;
+}

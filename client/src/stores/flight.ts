@@ -2,12 +2,18 @@ import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 
 import {
+	fetchAirports,
 	fetchFlightDetail,
 	fetchFlightTrack,
 	fetchFlights,
 } from "../services/api";
 import { createFlightsSocket } from "../services/ws";
-import type { FlightBrief, FlightDetail, TrackPoint } from "../types/flight";
+import type {
+	AirportInfo,
+	FlightBrief,
+	FlightDetail,
+	TrackPoint,
+} from "../types/flight";
 
 export const useFlightStore = defineStore("flight", () => {
 	const flights = ref<FlightBrief[]>([]);
@@ -21,6 +27,8 @@ export const useFlightStore = defineStore("flight", () => {
 	const filterStatus = ref<"all" | "airborne" | "on_ground">("all");
 	const flightDetail = ref<FlightDetail | null>(null);
 	const detailLoading = ref(false);
+	const airports = ref<AirportInfo[]>([]);
+	const airportsLoaded = ref(false);
 
 	async function loadInitialFlights() {
 		loading.value = true;
@@ -42,7 +50,9 @@ export const useFlightStore = defineStore("flight", () => {
 
 				if (
 					selectedFlightId.value &&
-					!snapshot.some((flight) => flight.flight_id === selectedFlightId.value)
+					!snapshot.some(
+						(flight) => flight.flight_id === selectedFlightId.value,
+					)
 				) {
 					selectedFlightId.value = null;
 					selectedTrackPoints.value = [];
@@ -92,8 +102,9 @@ export const useFlightStore = defineStore("flight", () => {
 	const total = computed(() => flights.value.length);
 	const selectedFlight = computed<FlightBrief | null>(
 		() =>
-			flights.value.find((flight) => flight.flight_id === selectedFlightId.value) ??
-			null,
+			flights.value.find(
+				(flight) => flight.flight_id === selectedFlightId.value,
+			) ?? null,
 	);
 	const filteredFlights = computed(() => {
 		let list = flights.value;
@@ -114,6 +125,16 @@ export const useFlightStore = defineStore("flight", () => {
 
 		return list;
 	});
+
+	async function loadAirports() {
+		if (airportsLoaded.value) return;
+		try {
+			airports.value = await fetchAirports();
+			airportsLoaded.value = true;
+		} catch {
+			// 失败时保持空列表，不阻塞其他功能
+		}
+	}
 
 	async function loadFlightDetail(flightId: string | null) {
 		if (!flightId) {
@@ -153,10 +174,12 @@ export const useFlightStore = defineStore("flight", () => {
 		filteredFlights,
 		flightDetail,
 		detailLoading,
+		airports,
 		loadInitialFlights,
 		connectSocket,
 		disconnectSocket,
 		selectFlight,
 		loadFlightDetail,
+		loadAirports,
 	};
 });
