@@ -8,6 +8,102 @@ from app.state import flight_store, unified_pipeline
 router = APIRouter(prefix="/api/v1", tags=["flights"])
 
 
+def _to_weather_info(hub_payload: dict | None) -> dict | None:
+    """Normalize hub weather to frontend `WeatherInfo` (temp_c, humidity_pct, …)."""
+    if not isinstance(hub_payload, dict):
+        return None
+
+    # get_hub_weather_for_iata → {"weather": <openweather snapshot>, "air_quality": …}
+    inner = hub_payload.get("weather")
+    if isinstance(inner, dict) and (
+        inner.get("provider") == "openweather" or "temperature_c" in inner or "raw" in inner
+    ):
+        snap = inner
+    else:
+        snap = hub_payload
+
+    if not isinstance(snap, dict) or not snap:
+        return None
+
+    raw = snap.get("raw")
+    if not isinstance(raw, dict):
+        raw = {}
+    main_from_raw = raw.get("main")
+    if not isinstance(main_from_raw, dict):
+        main_from_raw = {}
+    # Prefer snapshot fields; fall back to OpenWeather raw payload
+    t_val: float | int | None = snap.get("temperature_c", snap.get("temp_c"))
+    if t_val is None and main_from_raw:
+        t_val = main_from_raw.get("temp")
+    if t_val is not None and not isinstance(t_val, (int, float)):
+        try:
+            t_val = float(t_val)
+        except (TypeError, ValueError):
+            t_val = None
+
+    h_val = snap.get("humidity", snap.get("humidity_pct"))
+    if h_val is None and main_from_raw:
+        h_val = main_from_raw.get("humidity")
+    if h_val is not None:
+        try:
+            h_val = int(round(float(h_val)))
+        except (TypeError, ValueError):
+            h_val = None
+
+    wind = snap.get("wind")
+    if (not isinstance(wind, dict) or not wind) and isinstance(raw.get("wind"), dict):
+        wind = raw.get("wind", {})
+    if not isinstance(wind, dict):
+        wind = {}
+    wspd = wind.get("speed", snap.get("wind_speed_mps"))
+    if wspd is not None:
+        try:
+            wspd = float(wspd)
+        except (TypeError, ValueError):
+            wspd = None
+    wdeg = wind.get("deg", snap.get("wind_deg"))
+    if wdeg is not None:
+        try:
+            wdeg = int(round(float(wdeg)))
+        except (TypeError, ValueError):
+            wdeg = None
+
+    cond = snap.get("weather")
+    if isinstance(cond, list) and cond and isinstance(cond[0], dict):
+        cond = cond[0]
+    if not isinstance(cond, dict):
+        cond = {}
+    desc: str | None = cond.get("description")
+    if not desc and raw.get("weather"):
+        wlist = raw.get("weather")
+        if isinstance(wlist, list) and wlist and isinstance(wlist[0], dict):
+            desc = wlist[0].get("description")
+    if not desc:
+        desc = snap.get("description")
+
+    vis = snap.get("visibility_m", raw.get("visibility"))
+    if vis is not None:
+        try:
+            vis = int(float(vis))
+        except (TypeError, ValueError):
+            vis = None
+
+    if all(
+        x is None
+        for x in (t_val, h_val, wspd, wdeg, vis)
+    ) and not (isinstance(desc, str) and desc.strip()):
+        return None
+
+    return {
+        "temp_c": t_val,
+        "humidity_pct": h_val,
+        "wind_speed_mps": wspd,
+        "wind_deg": wdeg,
+        "description": desc,
+        "visibility_m": vis,
+    }
+
+
 @router.get("/flights")
 async def list_flights(
     page: int = Query(default=1, ge=1),
@@ -141,8 +237,8 @@ async def get_flight_detail(flight_id: str) -> ApiResponse:
     # Enrich with departure / arrival airport weather from the hub cache.
     dep_weather = await unified_pipeline.get_hub_weather_for_iata(detail.departure_airport)
     arr_weather = await unified_pipeline.get_hub_weather_for_iata(detail.arrival_airport)
-    data["departure_weather"] = dep_weather
-    data["arrival_weather"] = arr_weather
+    data["departure_weather"] = _to_weather_info(dep_weather)
+    data["arrival_weather"] = _to_weather_info(arr_weather)
 
     return ApiResponse(data=data)
 

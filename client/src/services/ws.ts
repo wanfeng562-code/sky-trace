@@ -1,25 +1,62 @@
 import type { FlightBrief } from "../types/flight";
 
 export type SnapshotHandler = (flights: FlightBrief[]) => void;
+export type StatusHandler = (online: boolean) => void;
 
-export function createFlightsSocket(onSnapshot: SnapshotHandler): WebSocket {
-	const ws = new WebSocket(import.meta.env.VITE_WS_URL);
+const RECONNECT_DELAYS = [2000, 4000, 8000, 15000, 30000];
 
-	ws.onmessage = (event) => {
-		try {
-			const payload = JSON.parse(event.data) as {
-				event: string;
-				data: FlightBrief[];
-			};
+export function createFlightsSocket(
+	onSnapshot: SnapshotHandler,
+	onStatusChange?: StatusHandler,
+): { close: () => void } {
+	let ws: WebSocket | null = null;
+	let retryCount = 0;
+	let closed = false;
 
-			if (payload.event === "snapshot") {
-				onSnapshot(payload.data);
+	function connect() {
+		ws = new WebSocket(import.meta.env.VITE_WS_URL);
+
+		ws.onopen = () => {
+			retryCount = 0;
+			onStatusChange?.(true);
+		};
+
+		ws.onmessage = (event) => {
+			try {
+				const payload = JSON.parse(event.data) as {
+					event: string;
+					data: FlightBrief[];
+				};
+
+				if (payload.event === "snapshot") {
+					onSnapshot(payload.data);
+				}
+			} catch {
+				// 忽略格式错误的帧
 			}
-		} catch {
-			// TODO: Add centralized error reporting for malformed socket payloads.
-		}
-	};
+		};
 
-	// TODO: Add reconnect/backoff strategy for unstable network conditions.
-	return ws;
+		ws.onclose = () => {
+			onStatusChange?.(false);
+			if (!closed) {
+				const delay =
+					RECONNECT_DELAYS[Math.min(retryCount, RECONNECT_DELAYS.length - 1)];
+				retryCount++;
+				setTimeout(connect, delay);
+			}
+		};
+
+		ws.onerror = () => {
+			ws?.close();
+		};
+	}
+
+	connect();
+
+	return {
+		close() {
+			closed = true;
+			ws?.close();
+		},
+	};
 }
