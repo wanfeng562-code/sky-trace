@@ -1,3 +1,86 @@
+## 4.27
+1. 更新 `.gitignore`，忽略 `server/data/*.db`、`server/data/*.db-wal`、`server/data/*.db-shm` 等 SQLite 数据库相关文件，避免本地运行数据被意外提交。
+2. 合并同学前端提交到主分支（Merge branch 'main' of remote）。
+
+---
+
+## 4.26
+前端（kexiao123）完成航班交互模块全链路：
+
+1. **类型系统扩展**（`types/flight.ts`）
+   - 新增 `WeatherInfo`（温度/湿度/风速/风向/能见度/天气描述）。
+   - 新增 `FlightDetail`（扩展 `FlightBrief`，含起降机场、机型、飞行状态、`departure_weather` / `arrival_weather`）。
+   - 新增 `FlightQueryParams`、`FlightStats` 类型定义。
+
+2. **API 层**（`services/api.ts`）
+   - `fetchFlights` 增加 `FlightQueryParams` 可选入参，可按呼号/bbox筛选。
+   - 新增 `fetchFlightDetail`：调用 `GET /flights/{id}`，自动将 `last_position` 子字段合并到顶层，组件可直接绑定。
+   - 新增 `fetchFlightStats`：调用 `GET /flights/summary/stats`。
+
+3. **状态管理**（`stores/flight.ts`）
+   - 新增 `searchKeyword`、`filterStatus`（all/airborne/on_ground）、`flightDetail`、`detailLoading`、`wsOnline`。
+   - 新增 `filteredFlights` 计算属性（关键字 + 状态双过滤，列表与地图共用）。
+   - 新增 `loadFlightDetail`，带竞态保护（仅写入当前选中 ID 的结果）。
+   - socket 类型改为 `{ close: () => void } | null`，`disconnectSocket` 在 `onUnmounted` 正确释放。
+
+4. **WS 断线重连**（`services/ws.ts`）
+   - 实现退避重连：`[2s, 4s, 8s, 15s, 30s]`，`onStatusChange` 回调同步 `wsOnline` 状态。
+   - 对外返回 `{ close() }` 句柄，供页面卸载时调用。
+
+5. **新增组件**
+   - `FlightDetailCard.vue`：浮层详情卡片，显示状态标签（飞行中/地面/计划中/已取消）、运动学参数、起降机场、机型；含关闭按钮。
+   - `WeatherBlock.vue`：独立 SFC，以表格形式展示 `WeatherInfo` 字段；拆分为独立文件以解决 Vite runtime-only 构建下内联子组件不渲染（仅显示 `<!>`）的问题。
+
+6. **FlightListPanel 升级**
+   - 断线离线横幅（`v-if="!wsOnline"`）。
+   - 搜索框实时触发 `emit('search', ...)`。
+   - 三态筛选 Tab（全部/飞行中/地面）。
+   - 空列表文案提示。
+
+7. **MapView 集成**
+   - 挂载 `FlightDetailCard`，绑定 `store.flightDetail` + `store.detailLoading`。
+   - 统一 `handleSelectFlight(flightId)` 入口：地图点选与列表行选均走同一路径（同时触发 `selectFlight` + `loadFlightDetail`）。
+
+---
+
+## 4.24
+1. **新增后端接口（5 个）**：
+   - `GET /api/v1/datahub/weather/nearest`：按经纬度查找最近有有效天气缓存的枢纽，返回天气 + AQI，支持自动降级。
+   - `GET /api/v1/datahub/quota`：返回各数据源（OpenSky / OpenWeather / AirLabs）今日调用次数与预算。
+   - `GET /api/v1/flights/summary/stats`：聚合统计（总数、飞行中、在地面、分类分布、高度分布、速度分布、呼号前缀分布）。
+   - `GET /api/v1/playback`：从 SQLite `flight_snapshots` 表按时间段回放历史机队（限 48h/2000 帧，支持 `interval` 采样间隔）。
+   - `GET /api/v1/flights/{id}`：详情接口关联起降机场当前天气（`departure_weather` / `arrival_weather`）。
+
+2. **HTTP 代理支持**：
+   - `core/config.py` 新增 `http_proxy: str = ""`，读取 `.env` 中的 `HTTP_PROXY`。
+   - `unified_pipeline.py` 所有 `aiohttp.session.get()` 调用加 `proxy=self._proxy` 参数，覆盖 OpenSky、OpenWeather（天气 + 空气质量）、AirLabs 五处外部请求。
+   - 国内网络可在 `server/.env` 加 `HTTP_PROXY=http://127.0.0.1:7890` 即可走本地代理。
+
+3. **商业层切换至 AirLabs**：
+   - 移除 AeroDataBox、Aviationstack 全部采集逻辑与配置。
+   - 新增 AirLabs `/flights` 每日一次批量富集（~30 次/月，节省 97% 额度），解析 `{"request":{...},"response":[...]}` 包裹格式。
+   - `config.py` 新增 `AIRLABS_API_KEY / airlabs_base_url / airlabs_enrich_ttl_hours`。
+
+4. **OpenSky 全球模式正式启用**：
+   - `OPENSKY_BBOX` 置空 → 全球范围采集（~6000 架/次）。
+   - 关闭活跃时间窗口，全天匀速 90 秒轮询（约 960 次/日，3840 点/日，余量充足）。
+   - OpenSky `extended=1` 新增 `aircraft_category` 字段。
+   - 新增 `DEV_REALTIME_DAILY_BUDGET_CALLS` 软截断上限（1000 次）。
+
+5. **环境层重构（20 枢纽并发采集）**：
+   - 新增全球 20 个枢纽坐标静态字典，用坐标接口替换城市名接口，精度更高。
+   - `asyncio.Semaphore(5)` 并发拉取，单枢纽失败优雅跳过。
+   - 空气质量独立缓存 `_air_quality_cache`（IATA 键字典）。
+   - 引入 5 秒重试机制，失败枢纽自动重试一次，成功率从 15/20 提升至 17-18/20。
+
+6. **SQLite 扩展**：
+   - 新增 `flight_snapshots` 表（含时间戳索引），支持快照保存、24h TTL 自动清理及回放查询。
+
+7. **日志增强**：
+   - OpenSky 回退 mock 时输出 WARNING（不再静默），前缀 `[ExceptionClassName]`，空消息回退显示类名。
+
+---
+
 ## 4.22
 1. 完成后端全部六项遗留功能：
 	- SQLite 持久化层（`db.py`）：建立 `flights`、`tracks`、`flight_details_extra` 三张表，WAL 模式，异步 aiosqlite 驱动。
