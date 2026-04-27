@@ -1,7 +1,9 @@
 <template>
 	<aside class="panel">
 		<h2>航班列表</h2>
-		<div v-if="!wsOnline" class="offline-banner">⚠ 实时连接已断开，正在重连...</div>
+		<div v-if="!wsOnline" class="offline-banner">
+			⚠ 实时连接已断开，正在重连...
+		</div>
 		<input
 			v-model="localKeyword"
 			class="search-input"
@@ -20,11 +22,18 @@
 			</button>
 		</div>
 		<p class="count-hint">共 {{ flights.length }} 架</p>
-		<ul>
-			<li
-				v-for="flight in flights"
-				:key="flight.flight_id"
-				:class="{ selected: flight.flight_id === selectedFlightId }"
+		<RecycleScroller
+			class="scroller"
+			:items="flights"
+			:item-size="56"
+			key-field="flight_id"
+			v-slot="{ item: flight }"
+		>
+			<div
+				:class="[
+					'flight-item',
+					{ selected: flight.flight_id === selectedFlightId },
+				]"
 				@click="emit('select', flight.flight_id)"
 			>
 				<div class="flight-main">
@@ -33,7 +42,9 @@
 				</div>
 				<div class="flight-sub">
 					<span>{{
-						flight.speed_kts != null ? `${Math.round(flight.speed_kts)} kts` : ""
+						flight.speed_kts != null
+							? `${Math.round(flight.speed_kts)} kts`
+							: ""
 					}}</span>
 					<span
 						:class="
@@ -49,14 +60,15 @@
 						}}
 					</span>
 				</div>
-			</li>
-		</ul>
+			</div>
+		</RecycleScroller>
 		<p v-if="!flights.length" class="empty-hint">无匹配航班</p>
 	</aside>
 </template>
 
 <script setup lang="ts">
 	import { ref } from "vue";
+	import { RecycleScroller } from "vue-virtual-scroller";
 	import type { FlightBrief } from "../types/flight";
 
 	const STATUS_TABS = [
@@ -87,10 +99,10 @@
 		padding: 12px;
 		border-left: 1px solid #d1d5db;
 		background: #ffffff;
-		overflow: auto;
 		display: flex;
 		flex-direction: column;
 		gap: 0;
+		overflow: hidden; /* scroller 自己滚动 */
 	}
 
 	h2 {
@@ -152,26 +164,26 @@
 		margin: 0 0 4px;
 	}
 
-	ul {
-		list-style: none;
-		padding: 0;
-		margin: 0;
+	.scroller {
 		flex: 1;
-		overflow-y: auto;
+		min-height: 0; /* 关键：让 flex 子项能收缩 */
 	}
 
-	li {
+	.flight-item {
 		padding: 8px 4px;
 		border-bottom: 1px solid #f3f4f6;
 		cursor: pointer;
 		transition: background-color 0.15s;
+		box-sizing: border-box;
+		height: 56px; /* 与 item-size 保持一致 */
+		overflow: hidden;
 	}
 
-	li:hover {
+	.flight-item:hover {
 		background: #f8fafc;
 	}
 
-	li.selected {
+	.flight-item.selected {
 		background: #eff6ff;
 	}
 

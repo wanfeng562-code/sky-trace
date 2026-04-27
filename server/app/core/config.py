@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     http_proxy: str = ""
 
     opensky_base_url: str = "https://opensky-network.org/api"
+    # OAuth2 client credentials (recommended — Basic auth was deprecated in 2024).
+    # Create a client at https://opensky-network.org/my-opensky/account.
+    opensky_client_id: str = ""
+    opensky_client_secret: str = ""
+    # Legacy Basic-auth credentials (treated as anonymous by OpenSky → 400 credits/day).
+    # Still accepted as a fallback but OAuth2 is strongly preferred.
     opensky_username: str = ""
     opensky_password: str = ""
     opensky_bbox: str = ""
@@ -158,10 +164,12 @@ class Settings(BaseSettings):
                 "commercial": self.release_commercial_interval_seconds,
             }
         else:
-            if layer == "realtime" and self.dev_realtime_use_active_window:
+            # For realtime, always delegate to the active-window helper so that
+            # idle_interval (90 s) is used when use_active_window=False.
+            if layer == "realtime":
                 return self.development_realtime_interval_seconds()
             mapping = {
-                "realtime": self.dev_realtime_interval_seconds,
+                "realtime": self.dev_realtime_interval_seconds,  # unused for realtime
                 "environment": self.dev_environment_interval_seconds,
                 "commercial": self.dev_commercial_interval_seconds,
             }

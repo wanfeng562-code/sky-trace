@@ -3,6 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
 
 from app.models.schemas import ApiResponse
+from app.services.unified_pipeline import HUB_INFO
 from app.state import flight_store, unified_pipeline
 
 router = APIRouter(prefix="/api/v1", tags=["flights"])
@@ -218,6 +219,12 @@ async def get_flight_stats() -> ApiResponse:
             "top_callsign_prefixes": [{"prefix": p, "count": c} for p, c in top_prefixes],
         }
     )
+
+
+@router.get("/airports", summary="List monitored hub airports with coordinates")
+async def list_airports() -> ApiResponse:
+    """Return the static list of monitored hub airports (IATA, name, lat, lon)."""
+    return ApiResponse(data=list(HUB_INFO.values()))
 
 
 @router.get("/flights/{flight_id}")
