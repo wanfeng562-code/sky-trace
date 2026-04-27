@@ -221,3 +221,6 @@ data/*.db
 data/*.db-shm
 data/*.db-wal
 
+server/data/sky_trace.db
+server/data/sky_trace.db-shm
+server/data/sky_trace.db-wal
