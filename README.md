@@ -40,11 +40,11 @@ copy .env.development.example .env
 
 用编辑器打开 `server/.env`，填写以下四个占位符：
 
-| 字段                                    | 申请地址                       |
-| --------------------------------------- | ------------------------------ |
-| `OPENSKY_USERNAME` / `OPENSKY_PASSWORD` | https://opensky-network.org/   |
-| `OPENWEATHER_API_KEY`                   | https://openweathermap.org/api |
-| `AIRLABS_API_KEY`                       | https://airlabs.co/            |
+| 字段                                          | 申请地址                                                               |
+| --------------------------------------------- | ---------------------------------------------------------------------- |
+| `OPENSKY_CLIENT_ID` / `OPENSKY_CLIENT_SECRET` | https://opensky-network.org → Account → API Clients → 创建客户端后复制 |
+| `OPENWEATHER_API_KEY`                         | https://openweathermap.org/api                                         |
+| `AIRLABS_API_KEY`                             | https://airlabs.co/                                                    |
 
 > `.env` 已在 `.gitignore` 中排除，不会被提交。  
 > 请勿在可提交文件（如 `.env.development.example`）中填写真实 Key。

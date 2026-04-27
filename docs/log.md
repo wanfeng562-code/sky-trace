@@ -1,6 +1,22 @@
 ## 4.27
 1. 更新 `.gitignore`，忽略 `server/data/*.db`、`server/data/*.db-wal`、`server/data/*.db-shm` 等 SQLite 数据库相关文件，避免本地运行数据被意外提交。
 2. 合并同学前端提交到主分支（Merge branch 'main' of remote）。
+3. **OpenSky 认证切换至 OAuth2 Client Credentials**：
+   - OpenSky 于 2024 年废弃 Basic Auth，旧 USERNAME/PASSWORD 被当作匿名请求处理（额度降至 400 点/日，全球模式下约 100 次即耗尽）。
+   - `config.py` 新增 `OPENSKY_CLIENT_ID` / `OPENSKY_CLIENT_SECRET` 配置项。
+   - `unified_pipeline.py` 新增 `_get_opensky_auth()`，优先使用 Bearer Token（自动缓存与续期），降级链：OAuth2 → Basic Auth → 匿名。
+   - 每次请求记录 `X-Rate-Limit-Remaining` 响应头，启动时在日志输出认证档位警告。
+   - `.env` / `.env.development.example` 同步更新，新增 OAuth2 字段说明，移除废弃 Basic Auth 字段。
+4. **地图视觉全面升级**（`MapView.vue`）：
+   - 底图切换为 **OpenFreeMap liberty**（矢量瓦片，高质量、无需 API Key）。
+   - 新增 **AWS Terrarium DEM hillshade** 地形晕渲图层（`hillshade-intensity: 0.35`）。
+   - 飞机图标改为 SVG（`plane.svg` 飞行中 / `plane_ground.svg` 地面），通过 HTMLImageElement → Canvas → ImageData 加载，兼容所有浏览器。
+   - 地名标注改为**双语**（英文 + 简体中文 `name:zh-Hans` 优先，无繁体混入）。
+   - 机场圆点与标签图层移除 `minzoom` 限制，初始加载即可见。
+   - 修复图层 z-order：机场 → 高亮机场 → 选中光晕 → 航迹线 → **飞机图标**（最顶层）。
+5. **后端 Bug 修复**：
+   - 修复 `interval_seconds()` 在 dev 模式下实际返回 30s（`DEV_REALTIME_INTERVAL_SECONDS`）而非预期 90s（`DEV_REALTIME_IDLE_INTERVAL_SECONDS`）的问题。
+   - 移除 OpenSky 请求失败时的指数退避逻辑，改为立即 fallback 到 mock 数据。
 
 ---
 
