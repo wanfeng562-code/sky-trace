@@ -498,6 +498,128 @@ class UnifiedDataPipeline:
 
         return payload
 
+    async def _fetch_airlabs_realtime_positions(self) -> list[FlightBrief]:
+        """Extract real-time ADS-B position data from the AirLabs /flights snapshot.
+
+        Reuses the same bulk call result as ``_fetch_airlabs_bulk_snapshot`` when
+        called independently, keeping quota cost at O(1) per interval.
+
+        Unit conversions:
+          - ``alt``   (metres)  → feet  × 3.28084
+          - ``speed`` (km/h)    → knots × 0.539957
+          - ``lng``   (AirLabs) → stored as ``lon``
+        """
+        raw = await self._fetch_airlabs_bulk_snapshot()
+        now = _utc_now()
+        flights: list[FlightBrief] = []
+
+        for f in raw:
+            lat = _safe_float(f.get("lat"))
+            lng = _safe_float(f.get("lng"))
+            if lat is None or lng is None:
+                continue
+
+            alt_m = _safe_float(f.get("alt"))
+            speed_kmh = _safe_float(f.get("speed"))
+            heading_raw = _safe_float(f.get("dir"))
+
+            altitude_ft = int(round(alt_m * 3.28084)) if alt_m is not None else None
+            speed_kts = int(round(speed_kmh * 0.539957)) if speed_kmh is not None else None
+            heading = int(round(heading_raw)) % 360 if heading_raw is not None else None
+
+            hex_icao = str(f.get("hex") or "").strip().lower()
+            callsign = (
+                str(f.get("flight_icao") or f.get("flight_iata") or f.get("reg_number") or "").strip()
+                or None
+            )
+            if not hex_icao and not callsign:
+                continue
+
+            flight_id = f"airlabs-{hex_icao}" if hex_icao else f"airlabs-{callsign}"
+            flights.append(
+                FlightBrief(
+                    flight_id=flight_id,
+                    callsign=callsign,
+                    lat=round(lat, 6),
+                    lon=round(lng, 6),
+                    heading=heading,
+                    speed_kts=speed_kts,
+                    altitude_ft=altitude_ft,
+                    aircraft_category=None,
+                    updated_at=now,
+                )
+            )
+
+        logger.debug("AirLabs realtime positions: %d flights with valid lat/lon", len(flights))
+        return flights
+
+    async def _fetch_flightradar_snapshot(self) -> list[FlightBrief]:
+        """Fetch real-time flights via the unofficial FlightRadarAPI SDK.
+
+        Runs the synchronous SDK call in a thread executor to avoid blocking
+        the async event loop.  altitude is already in feet, ground_speed in knots.
+
+        ⚠  Risk: FlightRadar24 may rate-limit or IP-ban aggressive callers.
+           Use only as a supplemental source with conservative polling intervals.
+        """
+        try:
+            from FlightRadar24 import FlightRadar24API  # type: ignore[import]
+        except ImportError:
+            logger.warning("FlightRadarAPI not installed; run: pip install FlightRadarAPI")
+            return []
+
+        def _sync_fetch() -> list:
+            fr = FlightRadar24API()
+            return fr.get_flights()
+
+        loop = asyncio.get_event_loop()
+        try:
+            raw_flights = await loop.run_in_executor(None, _sync_fetch)
+        except Exception as exc:
+            logger.warning("FlightRadar24 fetch failed: %s [%s]", exc, type(exc).__name__)
+            return []
+
+        now = _utc_now()
+        flights: list[FlightBrief] = []
+
+        for f in raw_flights:
+            lat = _safe_float(getattr(f, "latitude", None))
+            lon = _safe_float(getattr(f, "longitude", None))
+            if lat is None or lon is None:
+                continue
+
+            altitude_ft_raw = _safe_float(getattr(f, "altitude", None))
+            speed_kts_raw = _safe_float(getattr(f, "ground_speed", None))
+            heading_raw = _safe_float(getattr(f, "heading", None))
+
+            heading = int(round(heading_raw)) % 360 if heading_raw is not None else None
+            altitude_ft = int(round(altitude_ft_raw)) if altitude_ft_raw is not None else None
+            speed_kts = int(round(speed_kts_raw)) if speed_kts_raw is not None else None
+
+            icao24 = str(getattr(f, "icao_24bit", "") or "").strip().lower()
+            callsign = str(getattr(f, "callsign", "") or "").strip() or None
+
+            if not icao24 and not callsign:
+                continue
+
+            flight_id = f"fr24-{icao24}" if icao24 else f"fr24-{callsign}"
+            flights.append(
+                FlightBrief(
+                    flight_id=flight_id,
+                    callsign=callsign,
+                    lat=round(lat, 6),
+                    lon=round(lon, 6),
+                    heading=heading,
+                    speed_kts=speed_kts,
+                    altitude_ft=altitude_ft,
+                    aircraft_category=None,
+                    updated_at=now,
+                )
+            )
+
+        logger.debug("FlightRadar24 snapshot: %d flights fetched", len(flights))
+        return flights
+
     async def _get_opensky_auth(
         self,
     ) -> tuple[dict[str, str] | None, aiohttp.BasicAuth | None]:

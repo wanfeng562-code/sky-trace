@@ -7,6 +7,12 @@
     - 能够获取实时状态、位置更新、历史轨迹。
     - 链接：https://github.com/openskynetwork/opensky-api
 
+## FlghtRadarAPI(FlightRadar24 Python 3 及 Node.js 的非官方 SDK)
+    - 通过解析 FlightRadar24 的数据提供航班位置和状态信息。
+    - 链接：https://github.com/JeanExtreme002/FlightRadarAPI
+    - 不限额度，但应该有频率限制，作为补充数据源
+    - 模拟浏览器请求地图瓦片，具有IP封禁风险
+
 ## AeroDataBox(航班详情与搜索接口)(limit)
 
     - 每月约 600 次调用(通过rapidapi，分层级限制调用)
@@ -31,6 +37,7 @@
 一个相对小众但对开发者很友好的数据源。
 免费额度：每月 1,000 次请求。
 特点：它的 flights 接口可以直接返回当前正在飞行的航班详情，非常适合用来补全 OpenSky 的数据。
+似乎也有航班位置数据，考虑作为补充数据源。
 
 ## Mapbox(地图底图接口)
 
