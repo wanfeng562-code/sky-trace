@@ -225,3 +225,9 @@ server/data/sky_trace.db
 server/data/sky_trace.db-shm
 server/data/sky_trace.db-wal
 前端航班交互模块修改记录.pdf
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+!.env.example
