@@ -1,7 +1,7 @@
 # Sky-Trace 第三方 API 参考手册
 
-> 整理时间：2025-06  
-> 覆盖范围：OpenSky Network、OpenWeatherMap、AirLabs v9  
+> 整理时间：2025-06 / 更新：2026-05  
+> 覆盖范围：OpenSky Network、OpenWeatherMap、AirLabs v9、**FlightRadar24 (ddima16-flightradarapi)**  
 > 文档目的：汇总所有可调用端点、字段说明、额度限制，并标注对本项目的潜在价值
 
 ---
@@ -11,7 +11,8 @@
 1. [OpenSky Network API](#1-opensky-network-api)
 2. [OpenWeatherMap API](#2-openweathermap-api)
 3. [AirLabs API v9](#3-airlabs-api-v9)
-4. [新机会与建议](#4-新机会与建议)
+4. [FlightRadar24 (ddima16-flightradarapi)](#4-flightradar24-ddima16-flightradarapi)
+5. [新机会与建议](#5-新机会与建议)
 
 ---
 
@@ -555,82 +556,219 @@ https://airlabs.co/api/v9/routes?dep_iata=PEK&arr_iata=SHA&api_key=KEY
 
 ---
 
-## 4. 新机会与建议
+## 4. FlightRadar24 (ddima16-flightradarapi)
 
-### 4.1 高价值新功能（可立即实现）
+**Python SDK：** [`ddima16-flightradarapi`](https://github.com/dimad16/FlightRadarAPI)（DimaD16 非官方 fork，支持 `proxy_url` 参数）  
+**安装：** `pip install ddima16-flightradarapi`  
+**认证方式：** 无需 API Key（非官方 SDK，模拟浏览器行为）  
+**代理要求：** 直连 `*.flightradar24.com` 在国内受限；需通过 Cloudflare Worker 代理（见 `FR24_PROXY_URL` 配置）  
+**地理限制：** 单次 bounding box 查询服务端约限制 1 500 条返回；需分区查询并去重  
+**配额限制：** 无官方限制，但高频请求会触发 IP 封禁（403 Forbidden）
 
-#### ✅ 4.1.1 空气质量叠加层（OpenWeather `/air_pollution`）
+---
+
+### 4.1 主要方法
+
+#### `get_flights(bounds=...)` — 分区航班位置列表（**当前已用，实时层第二数据源**）
+
+```python
+from FlightRadar24 import FlightRadar24API
+fr = FlightRadar24API(proxy_url="https://<worker>.workers.dev/?url=")
+zone = {"tl_y": 72.57, "tl_x": -16.96, "br_y": 33.57, "br_x": 53.05}
+bounds = fr.get_bounds(zone)
+flights = fr.get_flights(bounds=bounds)
+```
+
+**返回 `Flight` 对象列表，可用字段（`get_flights()` 基础查询，无需登录）：**
+
+| 字段                       | 类型  | 说明                                     | 商业价值 |
+| -------------------------- | ----- | ---------------------------------------- | -------- |
+| `id`                       | str   | FR24 内部 Flight ID                      |          |
+| `icao_24bit`               | str   | ICAO24 地址（hex，对应 OpenSky icao24）  | ★★★      |
+| `latitude`                 | float | 实时纬度（WGS-84）                       | ★★★      |
+| `longitude`                | float | 实时经度（WGS-84）                       | ★★★      |
+| `heading`                  | int   | 航向（度，顺时针）                       | ★★       |
+| `altitude`                 | int   | **高度（英尺）**（注：OpenSky 单位为米） | ★★       |
+| `ground_speed`             | int   | 地速（节 kts）                           | ★★       |
+| `vertical_speed`           | int   | 垂直速率（英尺/分钟）                    | ★        |
+| `squawk`                   | str   | 应答机代码                               |          |
+| `on_ground`                | bool  | 是否在地面                               | ★        |
+| `time`                     | int   | 位置时间戳（Unix UTC）                   |          |
+| `callsign`                 | str   | ATC 呼号（如 CCA101）                    | ★★★      |
+| `number`                   | str   | 航班号（如 CA101，含航司前缀）           | ★★★      |
+| `airline_iata`             | str   | 航空公司 IATA 代码（如 CA）              | ★★★      |
+| `airline_icao`             | str   | 航空公司 ICAO 代码（如 CCA）             | ★★       |
+| `aircraft_code`            | str   | 机型 ICAO 代码（如 B738、A320）          | ★★★      |
+| `registration`             | str   | 飞机注册号（尾号，如 B-5678）            | ★★★      |
+| `origin_airport_iata`      | str   | 出发机场 IATA（如 PEK）                  | ★★★      |
+| `destination_airport_iata` | str   | 目的地机场 IATA（如 SHA）                | ★★★      |
+
+> ⚠️ `altitude` 单位为**英尺**（ft），与 OpenSky `baro_altitude`（米）不同，pipeline 中直接存储为 `altitude_ft`。
+
+**与 AirLabs `/flights` 的比较：**
+
+| 特性          | FR24 (free)    | AirLabs (free)           |
+| ------------- | -------------- | ------------------------ |
+| 每日调用次数  | 无硬性限制     | 1000 次/月               |
+| 全球覆盖      | ✅ 分区采集     | ✅ bbox 查询              |
+| 出发/到达机场 | ✅ IATA         | ✅ IATA + ICAO            |
+| 机型          | ✅ ICAO         | ✅ ICAO                   |
+| 航班号        | ✅ 含航司前缀   | ✅                        |
+| 注册号        | ✅              | ❌ Free 不返回            |
+| 航班状态      | ❌ 无 status    | ✅ scheduled/en-route 等  |
+| 高度速度精度  | ✅ 高（ADS-B）  | 中等                     |
+| **结论**      | 商业层第二来源 | 商业层主来源（quota 少） |
+
+---
+
+#### `get_flight_details(flight_id)` — 单条航班完整详情（按需调用）
+
+```python
+details = fr.get_flight_details(flight.id)
+flight.set_flight_details(details)
+```
+
+调用后 `Flight` 对象新增字段（需额外 HTTP 请求）：
+
+| 字段                          | 说明                                           |
+| ----------------------------- | ---------------------------------------------- |
+| `aircraft_model`              | 机型全称（如 Boeing 737-800）                  |
+| `aircraft_age`                | 机龄（年）                                     |
+| `aircraft_country_id`         | 注册国                                         |
+| `aircraft_images`             | 飞机照片列表                                   |
+| `airline_name`                | 航空公司全名                                   |
+| `airline_short_name`          | 航空公司简称                                   |
+| `airport.origin.*`            | 出发机场完整信息（名称、ICAO、坐标、时区等）   |
+| `airport.destination.*`       | 目的地机场完整信息                             |
+| `time_details`                | 出发/到达时间、延误信息                        |
+| `status_text` / `status_icon` | 航班状态文字和图标 ID                          |
+| `trail`                       | 历史轨迹点列表 `[lat, lng, alt, spd, ts, ...]` |
+
+> ⚠️ 频繁调用 `get_flight_details` 会显著增加被封禁风险，建议仅对用户主动查询的航班按需调用，**不应在后台批量调用**。
+
+---
+
+#### `get_zones()` — 全球地理分区（参考用）
+
+```python
+zones = fr.get_zones()  # 返回含 subzones 的嵌套 dict
+```
+
+> 本项目不使用动态 zones，改用静态 25 区域表（`_FR24_ZONES`）以减少额外 API 调用。
+
+---
+
+### 4.2 反封禁设计（当前 pipeline 实现）
+
+**双层随机 sleep：**
+
+| 层级    | 时机                     | 随机范围    | 目的                       |
+| ------- | ------------------------ | ----------- | -------------------------- |
+| Layer 1 | 每两个相邻 zone 请求之间 | 1.0 – 4.0 s | 请求分散在 60-70 s 窗口    |
+| Layer 2 | 全部 25 区域采集完成后   | 20 – 30 s   | 采集结束后冷却，总周期≈90s |
+
+**403 自动退级：**
+- 任意 zone 返回 HTTP 403 Forbidden 时，立即停止采集
+- 设置 `_fr24_disabled = True`，清空缓存
+- Realtime 层自动退级为 OpenSky 单数据源
+- 不会无限重试，避免进一步触发封禁
+
+**其他可选加固策略（当前未实现）：**
+
+| 策略                    | 原理                                                                                                                 | 成本         | 推荐场景            |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------ | ------------------- |
+| 分区顺序随机化          | 每轮 `random.shuffle(_FR24_ZONES)` 打乱 25 个区域的遍历顺序，使流量模式无规律                                        | 零额外请求   | 低风险，可直接启用  |
+| 指数退避重试            | 首次 403 时先等 60 s 重试一次，再等 120 s 再重试一次，三次失败后才触发退级；短暂封禁（如 IP 轮换后的临时拦截）可自愈 | 零额外请求   | 封禁频率较高时      |
+| 区域跳跃（Skip on 429） | 收到 429 Too Many Requests 时跳过当前 zone，不中断整轮采集                                                           | 零额外请求   | 热门区域限速时      |
+| CF Worker IP 轮换       | 在多个 Cloudflare Workers 账号/Workers Route 之间随机路由，避免单 Worker IP 被 FR24 长期封禁                         | 多个 CF 账号 | 长期生产环境        |
+| UA/Headers 随机化       | 每次请求随机选取合理的 `User-Agent`、`Accept-Language`，使指纹特征更分散（SDK 层修改）                               | 零额外请求   | FR24 通过指纹检测时 |
+
+---
+
+## 5. 新机会与建议
+
+### 5.1 高价值新功能（可立即实现）
+
+#### ✅ 5.1.1 空气质量叠加层（OpenWeather `/air_pollution`）
 
 - **不消耗 AirLabs 额度，完全免费（OpenWeather 免费套餐覆盖）**
 - 为航班所在区域提供 AQI + PM2.5/PM10/O₃/NO₂/CO 数据
 - 应用场景：高污染天气时在前端地图显示特殊标记；为飞行员/分析员提供能见度参考
 - **实现建议：** 在 `unified_pipeline.py` 中新增 `_collect_air_quality()` 方法，以 BBOX 中心点（纬度≈23.5, 经度≈112）每小时请求一次
 
-#### ✅ 4.1.2 航班延误信息（AirLabs `/flight` 单条详情）
+#### ✅ 5.1.2 航班延误信息（AirLabs `/flight` 单条详情）
 
 - 当前批量 `/flights` 已返回基础状态，但不含延误分钟数
 - 对特定关注航班可调用 `/flight?flight_iata=XX`，获取 `dep_delayed`、`arr_delayed`
 - **节约额度建议：** 仅对状态异常的航班（非 `en-route`）触发单条查询
 
-#### ✅ 4.1.3 离港/到港机场时刻表（AirLabs `/schedules`）
+#### ✅ 5.1.3 离港/到港机场时刻表（AirLabs `/schedules`）
 
 - 可展示某机场未来10小时的出发/到达队列
 - 结合 OpenSky 实时位置，可验证某航班是否已按时起飞
 - **实现建议：** 对项目监控的主要机场（如 ZGGG 广州、ZGSZ 深圳）每小时轮询一次
 
-#### ✅ 4.1.4 飞机扩展分类（OpenSky `extended=1`）
+#### ✅ 5.1.4 飞机扩展分类（OpenSky `extended=1`）
 
 - 在现有 `/states/all` 请求中加入 `extended=1`，**不增加额外额度消耗**
 - 可获得飞机类别字段（商用大型、旋翼机、无人机等）
 - **实现建议：** 修改 `_collect_realtime()` 的 bbox 请求，追加 `extended=1`
 
-#### 🔶 4.1.5 静态航线数据库本地缓存（AirLabs `/routes`）
+#### 🔶 5.1.5 静态航线数据库本地缓存（AirLabs `/routes`）
 
 - 一次性下载华南区域主要机场的所有航线数据，本地存储
 - 用于丰富前端"常规航线"展示，无需实时调用
 - **额度评估：** 按机场逐一下载，每机场 1 次请求（Free 50条/次），可覆盖 ZGSZ/ZGGG/ZGHA/ZGKL 等约10个机场 → 消耗约 10 次额度
 
-#### 🔶 4.1.6 航空公司 Logo 展示（AirLabs 静态图片）
+#### 🔶 5.1.6 航空公司 Logo 展示（AirLabs 静态图片）
 
 - `https://airlabs.co/img/airline/m/{IATA}.png` **无需 API Key，完全免费**
 - 直接在前端使用，为航班卡片添加航空公司 Logo
 - **无额度消耗**
 
-#### 🔶 4.1.7 机场元信息本地缓存（AirLabs `/airports`）
+#### 🔶 5.1.7 机场元信息本地缓存（AirLabs `/airports`）
 
 - 一次性拉取华南主要机场的坐标、时区、名称
 - 用于前端地图标注机场图标，免于每次查询
 - **额度评估：** 约 10–20 次请求，一次性消耗
 
+#### ✅ 5.1.8 FR24 商业数据作为 AirLabs 第二来源（**已实现**）
+
+- **无额外 API 调用，完全免费**：`get_flights()` 基础查询已包含出发/到达机场、机型、航班号、注册号
+- 覆盖范围远超 AirLabs：FR24 分区查询 ~12 000 架次 vs AirLabs bbox 查询仅覆盖配置区域
+- **已实现：** `_fr24_background_loop` 在每轮采集后自动调用 `upsert_detail_extra`，以 `source="fr24"` 写入商业层字段
+- AirLabs 仍作为主商业来源（提供 `status` 字段），FR24 作为补充（提供 `registration` 等 AirLabs Free 不返回的字段）
+
 ---
 
-### 4.2 中期建议（需更多开发）
+### 5.2 中期建议（需更多开发）
 
-#### 4.2.1 5天天气预报集成（OpenWeather `/forecast`）
+#### 5.2.1 5天天气预报集成（OpenWeather `/forecast`）
 
-- 当前仅使用实时天气；预报数据可为"未来航班是否受天气影响"提供参考
-- 响应包含降水概率（`pop`）、风速、能见度，对航班管理场景有价值
+- 当前仅使用实时天气；预报数据可为“未来航班是否受天气影响”提供参考
+- 响应包含降水概率（`pop`）、风速、能见度，对航班管理场景有价値
 
-#### 4.2.2 历史航班轨迹（OpenSky `/tracks/all`）
+#### 5.2.2 历史航班轨迹（OpenSky `/tracks/all`）
 
 - 对特定 icao24 查询实时或历史轨迹（`time=0` 为实时）
-- 可实现"航班实时轨迹回放"功能
+- 可实现“航班实时轨迹回放”功能
 - **注意：** 实验性端点，消耗 4 点/次
 
-#### 4.2.3 按机场查历史到离港（OpenSky `/flights/arrival` + `/flights/departure`）
+#### 5.2.3 按机场查历史到离港（OpenSky `/flights/arrival` + `/flights/departure`）
 
 - 结合本地主要机场 ICAO，可拉取前一天实际到离港数据
 - 用于统计分析、准点率计算等
 
 ---
 
-### 4.3 额度使用建议汇总
+### 5.3 额度使用建议汇总
 
 | API                        | 当前消耗                          | 优化建议                                                  |
 | -------------------------- | --------------------------------- | --------------------------------------------------------- |
 | AirLabs（1000次/月）       | 每日1次批量 `/flights` = 31次/月  | 剩余约969次，可用于 `/routes` 静态缓存 + 异常航班单条详情 |
 | OpenSky（4000点/日）       | 每N秒1次 `/states/all` = 约2点/次 | bbox 40sq° → 2点/次，1小时可调用约2000次                  |
 | OpenWeather（1000次/分钟） | 现有气象查询                      | 免费额度充裕，可放心添加 `/air_pollution`                 |
+| FR24（无官方限制）         | 25区域 / ~90s 一轮 = ~960次/日    | 双层 sleep 规避封禁；403 触发后自动退级                   |
 
 ---
 

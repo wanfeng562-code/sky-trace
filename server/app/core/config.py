@@ -70,6 +70,13 @@ class Settings(BaseSettings):
     # aligns with the daily refresh cadence so records never become stale.
     airlabs_enrich_ttl_hours: int = 24
 
+    # FlightRadar24 Cloudflare Worker proxy URL (ddima16-flightradarapi fork).
+    # Required to bypass FR24's Cloudflare protection (returns 403 without proxy).
+    # Deploy your own free worker: https://github.com/DimaD16/cloudflare-workers-fr24-proxy
+    # Format: https://<your-worker>.workers.dev/?url=
+    # Leave empty to disable FR24 as a supplemental source.
+    fr24_proxy_url: str = ""
+
     openweather_api_key: str = ""
     openweather_city: str = "Guangzhou"
     openweather_base_url: str = "https://api.openweathermap.org/data/2.5"

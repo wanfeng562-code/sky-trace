@@ -7,11 +7,18 @@
     - 能够获取实时状态、位置更新、历史轨迹。
     - 链接：https://github.com/openskynetwork/opensky-api
 
-## FlghtRadarAPI(FlightRadar24 Python 3 及 Node.js 的非官方 SDK)
-    - 通过解析 FlightRadar24 的数据提供航班位置和状态信息。
-    - 链接：https://github.com/JeanExtreme002/FlightRadarAPI
-    - 不限额度，但应该有频率限制，作为补充数据源
-    - 模拟浏览器请求地图瓦片，具有IP封禁风险
+## FlightRadar24 补充数据源（ddima16-flightradarapi fork）
+    - FlightRadar24 的非官方 Python SDK（DimaD16 fork），支持 Cloudflare Worker 代理绕过 403
+    - 原版：https://github.com/JeanExtreme002/FlightRadarAPI
+    - Fork（当前使用）：https://github.com/DimaD16/FlightRadarAPI
+    - 安装：`pip install ddima16-flightradarapi`（import 路径与原版相同：`from FlightRadar24 import FlightRadar24API`）
+    - 初始化：`FlightRadar24API(proxy_url="https://<your-worker>.workers.dev/?url=")`
+    - **Cloudflare Worker 代理**：FlightRadar24 对直接请求返回 403，需部署免费 Worker 代理
+      - 部署源：https://github.com/DimaD16/cloudflare-workers-fr24-proxy
+      - 一键部署：https://deploy.workers.cloudflare.com/?url=https://github.com/DimaD16/cloudflare-workers-fr24-proxy/tree/main
+      - 免费额度：100,000 次/天（Cloudflare Workers 免费计划）
+    - 通过解析 FlightRadar24 的数据提供全球航班位置，作为 OpenSky/AirLabs 的补充源
+    - 配置：在 `server/.env` 中填写 `FR24_PROXY_URL`；留空则自动禁用该数据源
 
 ## AeroDataBox(航班详情与搜索接口)(limit)
 

@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import math
+import random
 from datetime import datetime, timezone
 from typing import Any, Literal
 
@@ -175,6 +176,14 @@ class UnifiedDataPipeline:
         self._opensky_token: str | None = None
         self._opensky_token_expires_at: float = 0.0  # monotonic seconds
 
+        # FR24 background collector cache.
+        # Populated by _fr24_background_loop every ~90 s; never blocks realtime cycle.
+        self._fr24_cache: list[FlightBrief] = []
+        self._fr24_bg_task: asyncio.Task | None = None
+        # Set to True when FR24 returns 403 Forbidden; the loop stops and
+        # the realtime layer falls back to OpenSky-only.
+        self._fr24_disabled: bool = False
+
     async def start(self) -> None:
         if self._running:
             return
@@ -190,6 +199,10 @@ class UnifiedDataPipeline:
             asyncio.create_task(self._run_layer("environment"), name="collector-environment"),
             asyncio.create_task(self._run_layer("commercial"), name="collector-commercial"),
         ]
+        if settings.fr24_proxy_url:
+            self._fr24_bg_task = asyncio.create_task(
+                self._fr24_background_loop(), name="collector-fr24"
+            )
         logger.info(
             "unified pipeline started with profile=%s realtime=%ss env=%ss commercial=%ss",
             settings.app_profile,
@@ -212,6 +225,17 @@ class UnifiedDataPipeline:
                 "(400 credits/day, 10-second time resolution)."
             )
 
+        if settings.fr24_proxy_url:
+            logger.info(
+                "FlightRadar24: Cloudflare Worker proxy configured (%s)",
+                settings.fr24_proxy_url,
+            )
+        else:
+            logger.debug(
+                "FlightRadar24: FR24_PROXY_URL not set — FR24 supplemental source disabled. "
+                "Deploy a worker at https://github.com/DimaD16/cloudflare-workers-fr24-proxy"
+            )
+
     async def stop(self) -> None:
         if not self._running:
             return
@@ -219,9 +243,16 @@ class UnifiedDataPipeline:
         self._running = False
         for task in self._tasks:
             task.cancel()
+        if self._fr24_bg_task and not self._fr24_bg_task.done():
+            self._fr24_bg_task.cancel()
         for task in self._tasks:
             try:
                 await task
+            except asyncio.CancelledError:
+                pass
+        if self._fr24_bg_task:
+            try:
+                await self._fr24_bg_task
             except asyncio.CancelledError:
                 pass
 
@@ -308,6 +339,16 @@ class UnifiedDataPipeline:
             updates = self._mock_collector.collect()
 
         await self._flight_store.apply_updates(updates)
+
+        # Merge cached FR24 data (collected asynchronously in the background).
+        # FR24 flights use a distinct "fr24-" prefix so they don't collide with
+        # OpenSky/mock flight IDs. Only merge when we have live primary data.
+        # When FR24 is disabled (403 received) we silently skip this step,
+        # falling back to OpenSky as the sole realtime source.
+        if updates and self._fr24_cache and not self._fr24_disabled:
+            await self._flight_store.apply_updates(self._fr24_cache)
+            logger.debug("FR24 cache merged: %d supplemental flights", len(self._fr24_cache))
+
         await self._record_success("realtime", source=source, count=len(updates), note=note)
 
         # Persist a compact snapshot for historical playback (throttled).
@@ -348,24 +389,28 @@ class UnifiedDataPipeline:
 
         sem = asyncio.Semaphore(5)  # max 5 concurrent requests to OpenWeather
 
-        async def _fetch_hub(iata: str, lat: float, lon: float) -> tuple[str, dict | None, dict | None]:
+        async def _fetch_point(
+            key: str, lat: float, lon: float, *, do_aq: bool = True
+        ) -> tuple[str, dict | None, dict | None]:
             async with sem:
                 try:
                     weather = await self._fetch_openweather_by_coords(lat, lon)
-                    weather["iata"] = iata
+                    weather["iata"] = key
                 except Exception as exc:
-                    logger.warning("Weather fetch failed for %s: %s [%s]", iata, exc, type(exc).__name__)
-                    return iata, None, None
-                try:
-                    aq = await self._fetch_openweather_air_quality(lat, lon)
-                    aq["iata"] = iata
-                except Exception as exc:
-                    logger.warning("Air quality fetch failed for %s: %s", iata, exc)
-                    aq = None
-                return iata, weather, aq
+                    logger.warning("Weather fetch failed for %s: %s [%s]", key, exc, type(exc).__name__)
+                    return key, None, None
+                aq: dict | None = None
+                if do_aq:
+                    try:
+                        aq = await self._fetch_openweather_air_quality(lat, lon)
+                        aq["iata"] = key
+                    except Exception as exc:
+                        logger.warning("Air quality fetch failed for %s: %s", key, exc)
+                return key, weather, aq
 
+        # ── Hub fetch (with retry) ──────────────────────────────────────────
         results = await asyncio.gather(
-            *[_fetch_hub(iata, lat, lon) for iata, (lat, lon) in hubs.items()],
+            *[_fetch_point(iata, lat, lon, do_aq=True) for iata, (lat, lon) in hubs.items()],
             return_exceptions=True,
         )
 
@@ -383,7 +428,7 @@ class UnifiedDataPipeline:
             )
             await asyncio.sleep(5)
             retry_results = await asyncio.gather(
-                *[_fetch_hub(iata, lat, lon) for iata, (lat, lon) in failed_hubs.items()],
+                *[_fetch_point(iata, lat, lon, do_aq=True) for iata, (lat, lon) in failed_hubs.items()],
                 return_exceptions=True,
             )
             # Drop original None-results for retried hubs, append retry outcomes
@@ -399,20 +444,72 @@ class UnifiedDataPipeline:
             if isinstance(result, Exception):
                 logger.warning("Hub weather fetch error: %s [%s]", result, type(result).__name__)
                 continue
-            iata, w, aq = result
+            key, w, aq = result
             if w is None:
                 continue
-            new_weather[iata] = w
+            new_weather[key] = w
             if aq:
-                new_aq[iata] = aq
+                new_aq[key] = aq
             ok_count += 1
+
+        # ── Dynamic 5° grid cells based on active flight positions ─────────
+        # Build the set of 5° cells already covered by fixed hub airports.
+        hub_cells: set[tuple[int, int]] = {
+            (int(lat / 5) * 5, int(lon / 5) * 5) for _, (lat, lon) in hubs.items()
+        }
+
+        # Collect unique 5° grid cells from current active flights.
+        try:
+            active_flights = await self._flight_store.list_flights()
+        except Exception as exc:
+            active_flights = []
+            logger.debug("Failed to get active flights for grid sampling: %s", exc)
+
+        grid_cells: set[tuple[int, int]] = set()
+        for f in active_flights:
+            cell = (int(f.lat / 5) * 5, int(f.lon / 5) * 5)
+            if cell not in hub_cells:
+                grid_cells.add(cell)
+
+        # Limit to 80 extra grid cells; sample randomly if more.
+        _MAX_GRID = 80
+        selected_cells: list[tuple[int, int]] = (
+            random.sample(sorted(grid_cells), _MAX_GRID)
+            if len(grid_cells) > _MAX_GRID
+            else list(grid_cells)
+        )
+
+        if selected_cells:
+            # Representative point: centre of each 5° cell.
+            grid_points: dict[str, tuple[float, float]] = {
+                f"GRD_{clat:+d}_{clon:+d}": (clat + 2.5, clon + 2.5)
+                for clat, clon in selected_cells
+            }
+            grid_results = await asyncio.gather(
+                *[_fetch_point(key, lat, lon, do_aq=False) for key, (lat, lon) in grid_points.items()],
+                return_exceptions=True,
+            )
+            grid_ok = 0
+            for result in grid_results:
+                if isinstance(result, Exception):
+                    logger.debug("Grid weather fetch error: %s", result)
+                    continue
+                key, w, _ = result
+                if w is not None:
+                    new_weather[key] = w
+                    grid_ok += 1
+            logger.info(
+                "environment grid: %d/%d cells OK (covering ~%d active flights)",
+                grid_ok, len(selected_cells), len(active_flights),
+            )
 
         async with self._lock:
             self._weather_cache = new_weather
             self._air_quality_cache = new_aq
 
-        logger.info("environment collected: %d/%d hubs OK", ok_count, len(hubs))
-        await self._record_success("environment", source="openweather", count=ok_count)
+        total_ok = ok_count + (grid_ok if selected_cells else 0)
+        logger.info("environment collected: %d/%d hubs OK, %d total points", ok_count, len(hubs), total_ok)
+        await self._record_success("environment", source="openweather", count=total_ok)
 
     async def _collect_commercial(self) -> None:
         """Fetch bulk AirLabs /flights snapshot for the configured bbox and upsert all records.
@@ -553,24 +650,267 @@ class UnifiedDataPipeline:
         logger.debug("AirLabs realtime positions: %d flights with valid lat/lon", len(flights))
         return flights
 
+    # ------------------------------------------------------------------
+    # FR24 background collector
+    # ------------------------------------------------------------------
+
+    # Static zone table: parent zones that hit the ~1500 server cap have been
+    # replaced with finer subdivisions.  Each region is expected to return well
+    # under 1500 flights.  Requests are spread over ~90 s with 1-3 s random
+    # jitter between them to avoid anomaly-detection on the FR24 side.
+    _FR24_ZONES: list[tuple[str, dict]] = [
+        ("europe",          {"tl_y": 72.57, "tl_x": -16.96, "br_y": 33.57, "br_x":  53.05}),
+        ("na_north",        {"tl_y": 72.82, "tl_x":-177.97, "br_y": 41.92, "br_x": -52.48}),
+        ("na_northwest",    {"tl_y": 54.12, "tl_x":-134.13, "br_y": 38.32, "br_x": -96.75}),
+        ("na_northeast",    {"tl_y": 53.72, "tl_x": -98.76, "br_y": 38.22, "br_x": -57.36}),
+        ("na_southwest",    {"tl_y": 38.92, "tl_x":-133.98, "br_y": 22.62, "br_x": -96.75}),
+        ("na_southeast",    {"tl_y": 38.52, "tl_x": -98.62, "br_y": 22.52, "br_x": -57.36}),
+        ("na_s_west",       {"tl_y": 41.92, "tl_x":-177.83, "br_y":  3.82, "br_x":-110.00}),
+        ("na_s_east_n",     {"tl_y": 41.92, "tl_x":-110.00, "br_y": 22.00, "br_x": -80.00}),
+        ("na_s_east_n2",    {"tl_y": 41.92, "tl_x": -80.00, "br_y": 22.00, "br_x": -52.48}),
+        ("na_s_east_s",     {"tl_y": 22.00, "tl_x":-110.00, "br_y":  3.82, "br_x": -52.48}),
+        ("southamerica",    {"tl_y": 16.00, "tl_x": -96.00, "br_y":-57.00, "br_x": -31.00}),
+        ("oceania_west",    {"tl_y": 19.62, "tl_x":  88.40, "br_y":-55.08, "br_x": 134.00}),
+        ("oceania_east",    {"tl_y": 19.62, "tl_x": 134.00, "br_y":-55.08, "br_x": 180.00}),
+        ("asia_west",       {"tl_y": 79.98, "tl_x":  40.91, "br_y": 12.48, "br_x":  90.00}),
+        ("asia_central",    {"tl_y": 55.00, "tl_x":  90.00, "br_y": 12.48, "br_x": 113.50}),
+        ("asia_siberia",    {"tl_y": 79.98, "tl_x":  90.00, "br_y": 55.00, "br_x": 113.50}),
+        ("asia_japan_nw",   {"tl_y": 60.38, "tl_x": 113.50, "br_y": 40.00, "br_x": 130.00}),
+        ("asia_japan_ne",   {"tl_y": 60.38, "tl_x": 130.00, "br_y": 40.00, "br_x": 145.00}),
+        ("asia_japan_sw",   {"tl_y": 40.00, "tl_x": 113.50, "br_y": 22.58, "br_x": 130.00}),
+        ("asia_japan_se",   {"tl_y": 40.00, "tl_x": 130.00, "br_y": 22.58, "br_x": 145.00}),
+        ("asia_japan_east", {"tl_y": 60.38, "tl_x": 145.00, "br_y": 22.58, "br_x": 176.47}),
+        ("africa",          {"tl_y": 39.00, "tl_x": -29.00, "br_y":-39.00, "br_x":  55.00}),
+        ("atlantic",        {"tl_y": 52.62, "tl_x": -50.90, "br_y": 15.62, "br_x":  -4.75}),
+        ("maldives",        {"tl_y": 10.72, "tl_x":  63.10, "br_y": -6.08, "br_x":  86.53}),
+        ("northatlantic",   {"tl_y": 82.62, "tl_x": -84.53, "br_y": 59.02, "br_x":   4.45}),
+    ]
+
+    async def _fr24_background_loop(self) -> None:
+        """Continuously collect FR24 data in the background, refreshing every ~90 s.
+
+        **Traffic-anomaly-protection design (two-layer random sleep):**
+
+        Layer 1 — inter-request jitter (1-4 s):
+          25 zones × avg 2.5 s gap = ~60-70 s for the entire scan round.
+          Requests are naturally spread; no burst.
+
+        Layer 2 — post-collection cool-down (20-30 s):
+          After all zones are queried and the cache is updated we pause for a
+          random 20-30 s window before starting the next round.  This ensures
+          that FR24 sees sporadic activity (total cycle ≈ 80-100 s) rather than
+          a continuous stream of requests.
+
+        **403 degradation:**
+          If any zone query returns HTTP 403 Forbidden the loop sets
+          `_fr24_disabled = True`, clears the cache, logs a warning and stops.
+          `_collect_realtime` then falls back to OpenSky as the sole source.
+
+        **Commercial enrichment:**
+          FR24 free queries already expose origin_airport_iata,
+          destination_airport_iata, aircraft_code, number, airline_iata and
+          registration for every flight.  We upsert this into `flight_store`
+          so the commercial layer gains wide-coverage enrichment at zero
+          additional API quota cost.
+        """
+        proxy_url = settings.fr24_proxy_url.strip()
+        try:
+            from FlightRadar24 import FlightRadar24API  # type: ignore[import]
+        except ImportError:
+            logger.warning("ddima16-flightradarapi not installed — FR24 background collector disabled")
+            return
+
+        import os as _os
+
+        _proxy_keys = ("HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy")
+
+        while self._running and not self._fr24_disabled:
+            http_proxy = (settings.http_proxy or "").strip() or None
+            _saved = {k: _os.environ.get(k) for k in _proxy_keys}
+            if http_proxy:
+                for k in _proxy_keys:
+                    _os.environ[k] = http_proxy
+
+            loop = asyncio.get_event_loop()
+            seen_ids: set[str] = set()
+            collected: list = []
+            got_403 = False
+
+            def _query_zone(zone_coords: dict) -> list:
+                fr = FlightRadar24API(proxy_url=proxy_url)
+                bounds = fr.get_bounds(zone_coords)
+                return fr.get_flights(bounds=bounds)
+
+            n = len(self._FR24_ZONES)
+            for i, (zname, zone_coords) in enumerate(self._FR24_ZONES, 1):
+                if not self._running or got_403:
+                    break
+                try:
+                    zone_flights = await loop.run_in_executor(None, _query_zone, zone_coords)
+                    new_count = 0
+                    for f in zone_flights:
+                        if f.id not in seen_ids:
+                            seen_ids.add(f.id)
+                            collected.append(f)
+                            new_count += 1
+                    logger.debug("FR24 bg %s (%d/%d): %d raw +%d new", zname, i, n, len(zone_flights), new_count)
+                except Exception as ze:
+                    ze_str = str(ze)
+                    if "403" in ze_str or "forbidden" in ze_str.lower():
+                        logger.warning(
+                            "FR24 403 Forbidden on zone %s — disabling FR24 supplemental "
+                            "source. Realtime layer will use OpenSky only.", zname
+                        )
+                        got_403 = True
+                        break
+                    logger.debug("FR24 bg zone %s failed: %s", zname, ze)
+
+                # Layer-1 jitter: spread 25 zone requests over ~60-70 s
+                if i < n and self._running and not got_403:
+                    await asyncio.sleep(random.uniform(1.0, 4.0))
+
+            # Restore env vars regardless of outcome
+            for k in _proxy_keys:
+                if _saved[k] is None:
+                    _os.environ.pop(k, None)
+                else:
+                    _os.environ[k] = _saved[k]
+
+            if got_403:
+                self._fr24_disabled = True
+                self._fr24_cache = []
+                return
+
+            if collected:
+                now = _utc_now()
+                new_cache: list[FlightBrief] = []
+                for f in collected:
+                    lat = _safe_float(getattr(f, "latitude", None))
+                    lon = _safe_float(getattr(f, "longitude", None))
+                    if lat is None or lon is None:
+                        continue
+                    altitude_ft_raw = _safe_float(getattr(f, "altitude", None))
+                    speed_kts_raw = _safe_float(getattr(f, "ground_speed", None))
+                    heading_raw = _safe_float(getattr(f, "heading", None))
+                    icao24 = str(getattr(f, "icao_24bit", "") or "").strip().lower()
+                    callsign = str(getattr(f, "callsign", "") or "").strip() or None
+                    if not icao24 and not callsign:
+                        continue
+                    new_cache.append(FlightBrief(
+                        flight_id=f"fr24-{icao24}" if icao24 else f"fr24-{callsign}",
+                        callsign=callsign,
+                        lat=round(lat, 6),
+                        lon=round(lon, 6),
+                        heading=int(round(heading_raw)) % 360 if heading_raw is not None else None,
+                        speed_kts=int(round(speed_kts_raw)) if speed_kts_raw is not None else None,
+                        altitude_ft=int(round(altitude_ft_raw)) if altitude_ft_raw is not None else None,
+                        aircraft_category=None,
+                        updated_at=now,
+                    ))
+
+                    # Commercial enrichment: dep/arr airports, aircraft type, airline,
+                    # flight number — all available for free in basic FR24 queries.
+                    dep = str(getattr(f, "origin_airport_iata", "") or "").strip() or None
+                    arr = str(getattr(f, "destination_airport_iata", "") or "").strip() or None
+                    ac_type = str(getattr(f, "aircraft_code", "") or "").strip() or None
+                    flight_num = str(getattr(f, "number", "") or "").strip() or None
+                    al_iata = str(getattr(f, "airline_iata", "") or "").strip() or None
+                    al_icao = str(getattr(f, "airline_icao", "") or "").strip() or None
+                    # Only upsert when we have at least one useful field
+                    if (dep or arr or ac_type or flight_num) and (callsign or flight_num):
+                        cs_key = callsign or flight_num
+                        # Fire-and-forget; errors are swallowed inside upsert_detail_extra
+                        asyncio.ensure_future(
+                            self._flight_store.upsert_detail_extra(
+                                cs_key,
+                                departure_airport=dep,
+                                arrival_airport=arr,
+                                aircraft_type=ac_type,
+                                status=None,
+                                source="fr24",
+                            )
+                        )
+
+                self._fr24_cache = new_cache
+                logger.info(
+                    "FR24 background collect complete: %d unique flights cached, "
+                    "commercial enrichment queued", len(new_cache)
+                )
+
+            # Layer-2 cool-down: 20-30 s quiet window before starting next round.
+            # Total cycle = ~60-70 s (scan) + 20-30 s (cool-down) ≈ 80-100 s.
+            if self._running:
+                await asyncio.sleep(random.uniform(20.0, 30.0))
+
     async def _fetch_flightradar_snapshot(self) -> list[FlightBrief]:
-        """Fetch real-time flights via the unofficial FlightRadarAPI SDK.
+        """Fetch real-time flights via the ddima16-flightradarapi SDK (Cloudflare-bypass fork).
 
         Runs the synchronous SDK call in a thread executor to avoid blocking
         the async event loop.  altitude is already in feet, ground_speed in knots.
 
-        ⚠  Risk: FlightRadar24 may rate-limit or IP-ban aggressive callers.
-           Use only as a supplemental source with conservative polling intervals.
+        Requires FR24_PROXY_URL to be set in .env pointing to a deployed
+        Cloudflare Worker proxy: https://github.com/DimaD16/cloudflare-workers-fr24-proxy
+        Format: https://<your-worker>.workers.dev/?url=
+
+        Without a valid proxy URL the request will return 403 from FlightRadar24.
         """
+        proxy_url = settings.fr24_proxy_url.strip()
+        if not proxy_url:
+            logger.debug("FR24_PROXY_URL not configured — FlightRadar24 source disabled")
+            return []
+
         try:
             from FlightRadar24 import FlightRadar24API  # type: ignore[import]
         except ImportError:
-            logger.warning("FlightRadarAPI not installed; run: pip install FlightRadarAPI")
+            logger.warning(
+                "ddima16-flightradarapi not installed; run: pip install ddima16-flightradarapi"
+            )
             return []
 
         def _sync_fetch() -> list:
-            fr = FlightRadar24API()
-            return fr.get_flights()
+            # The FR24 SDK uses `requests` which reads HTTPS_PROXY/HTTP_PROXY from
+            # the environment on each request (trust_env=True).  Inject our
+            # http_proxy so requests to the CF Worker go through the local proxy
+            # (required in CN network environments).
+            import os as _os
+            _proxy_keys = ("HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy")
+            _saved = {k: _os.environ.get(k) for k in _proxy_keys}
+            http_proxy = (settings.http_proxy or "").strip() or None
+            if http_proxy:
+                for k in _proxy_keys:
+                    _os.environ[k] = http_proxy
+            try:
+                fr = FlightRadar24API(proxy_url=proxy_url)
+
+                # FR24 single global query is capped at ~1500 by the server.
+                # Query every zone + subzone separately, deduplicate by flight
+                # ID to maximise coverage (full_count is typically ~14 000+).
+                zones = fr.get_zones()
+                queries: dict = {}
+                for zname, zdata in zones.items():
+                    queries[zname] = {k: v for k, v in zdata.items() if k != "subzones"}
+                    for sname, sdata in zdata.get("subzones", {}).items():
+                        queries[f"{zname}/{sname}"] = sdata
+
+                seen_ids: set = set()
+                all_flights: list = []
+                for qname, zone in queries.items():
+                    bounds = fr.get_bounds(zone)
+                    try:
+                        for f in fr.get_flights(bounds=bounds):
+                            if f.id not in seen_ids:
+                                seen_ids.add(f.id)
+                                all_flights.append(f)
+                    except Exception as ze:
+                        logger.debug("FR24 zone %s failed: %s", qname, ze)
+
+                return all_flights
+            finally:
+                for k in _proxy_keys:
+                    if _saved[k] is None:
+                        _os.environ.pop(k, None)
+                    else:
+                        _os.environ[k] = _saved[k]
 
         loop = asyncio.get_event_loop()
         try:

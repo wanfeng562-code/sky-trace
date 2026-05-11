@@ -20,13 +20,14 @@ Run from repo root or server/ directory:
     python scripts/datasource_compare_test.py
 
 Dependencies (in server venv):
-    pip install aiohttp python-dotenv FlightRadarAPI
+    pip install aiohttp python-dotenv ddima16-flightradarapi
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import os
+import random
 import sys
 import time
 from datetime import datetime, timezone
@@ -51,6 +52,7 @@ OPENSKY_USERNAME      = os.getenv("OPENSKY_USERNAME", "")
 OPENSKY_PASSWORD      = os.getenv("OPENSKY_PASSWORD", "")
 AIRLABS_API_KEY       = os.getenv("AIRLABS_API_KEY", "")
 HTTP_PROXY            = os.getenv("HTTP_PROXY", "") or None
+FR24_PROXY_URL        = os.getenv("FR24_PROXY_URL", "").strip() or None
 
 OPENSKY_TOKEN_URL = (
     "https://auth.opensky-network.org/auth/realms/opensky-network"
@@ -282,26 +284,107 @@ def parse_airlabs(raw: list | None) -> list[dict]:
 
 # ── FlightRadar24 ─────────────────────────────────────────────────────────────
 def fetch_flightradar_sync() -> dict[str, Any]:
-    """Synchronous FlightRadar24 fetch (run in executor by caller)."""
-    result: dict[str, Any] = {"raw": [], "error": None, "elapsed_s": None}
+    """Synchronous FlightRadar24 fetch via Cloudflare Worker proxy (ddima16-flightradarapi)."""
+    result: dict[str, Any] = {"raw": [], "error": None, "elapsed_s": None, "proxy_url": FR24_PROXY_URL}
+    if not FR24_PROXY_URL:
+        result["error"] = "FR24_PROXY_URL not set in .env — skipping FlightRadar24"
+        print(f"  [FR24] {result['error']}")
+        return result
     try:
         from FlightRadar24 import FlightRadar24API  # type: ignore[import]
     except ImportError:
-        result["error"] = "FlightRadarAPI not installed; run: pip install FlightRadarAPI"
+        result["error"] = "ddima16-flightradarapi not installed; run: pip install ddima16-flightradarapi"
         print(f"  [FR24] {result['error']}")
         return result
 
+    # The FR24 SDK uses `requests` internally which reads proxy settings from
+    # HTTPS_PROXY / HTTP_PROXY env vars on each request (trust_env=True).
+    # Temporarily inject our HTTP_PROXY so requests to the CF Worker are routed
+    # through the local proxy (required in CN network environments).
+    _proxy_keys = ("HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy")
+    _saved = {k: os.environ.get(k) for k in _proxy_keys}
+    if HTTP_PROXY:
+        for k in _proxy_keys:
+            os.environ[k] = HTTP_PROXY
+
     t0 = time.monotonic()
     try:
-        fr = FlightRadar24API()
-        flights = fr.get_flights()
+        fr = FlightRadar24API(proxy_url=FR24_PROXY_URL)
+
+        # FR24 caps a single global query at ~1500 flights.
+        # Strategy: replace large zones (that hit 1500) with finer subdivisions
+        # and add random 1-3 s jitter between requests to avoid anomaly detection.
+        # Zones are chosen so that each sub-region is expected to stay well below
+        # 1500. The list is static (avoids an extra zones API call each run).
+        queries: list[tuple[str, dict]] = [
+            # Europe — 1109 total, safe as a single region
+            ("europe",          {"tl_y": 72.57, "tl_x": -16.96, "br_y": 33.57, "br_x": 53.05}),
+            # North America — parent (1500 hit) replaced by four sub-quadrants + north
+            ("na_north",        {"tl_y": 72.82, "tl_x": -177.97, "br_y": 41.92, "br_x": -52.48}),
+            ("na_northwest",    {"tl_y": 54.12, "tl_x": -134.13, "br_y": 38.32, "br_x": -96.75}),
+            ("na_northeast",    {"tl_y": 53.72, "tl_x": -98.76,  "br_y": 38.22, "br_x": -57.36}),
+            ("na_southwest",    {"tl_y": 38.92, "tl_x": -133.98, "br_y": 22.62, "br_x": -96.75}),
+            ("na_southeast",    {"tl_y": 38.52, "tl_x": -98.62,  "br_y": 22.52, "br_x": -57.36}),
+            # South North America strip (Mexico / Caribbean / Central America)
+            ("na_s_west",       {"tl_y": 41.92, "tl_x": -177.83, "br_y": 3.82,  "br_x": -110.0}),
+            ("na_s_east_n",     {"tl_y": 41.92, "tl_x": -110.0,  "br_y": 22.0,  "br_x": -80.0}),
+            ("na_s_east_n2",    {"tl_y": 41.92, "tl_x":  -80.0,  "br_y": 22.0,  "br_x": -52.48}),
+            ("na_s_east_s",     {"tl_y": 22.0,  "tl_x": -110.0,  "br_y":  3.82, "br_x": -52.48}),
+            # South America — 491 total, safe
+            ("southamerica",    {"tl_y": 16.0,  "tl_x": -96.0,   "br_y": -57.0, "br_x": -31.0}),
+            # Oceania — parent (1500 hit) split west/east at lon 134
+            ("oceania_west",    {"tl_y": 19.62, "tl_x": 88.4,    "br_y": -55.08,"br_x": 134.0}),
+            ("oceania_east",    {"tl_y": 19.62, "tl_x": 134.0,   "br_y": -55.08,"br_x": 180.0}),
+            # Asia — parent (1500 hit) split into 3; japan sub-zone (1500 hit) split into 2
+            ("asia_west",       {"tl_y": 79.98, "tl_x": 40.91,   "br_y": 12.48, "br_x": 90.0}),
+            ("asia_central",    {"tl_y": 55.0,  "tl_x": 90.0,    "br_y": 12.48, "br_x": 113.5}),
+            ("asia_siberia",    {"tl_y": 79.98, "tl_x": 90.0,    "br_y": 55.0,  "br_x": 113.5}),
+            ("asia_japan_nw",   {"tl_y": 60.38, "tl_x": 113.50, "br_y": 40.0,  "br_x": 130.0}),
+            ("asia_japan_ne",   {"tl_y": 60.38, "tl_x": 130.0,  "br_y": 40.0,  "br_x": 145.0}),
+            ("asia_japan_sw",   {"tl_y": 40.0,  "tl_x": 113.50, "br_y": 22.58, "br_x": 130.0}),
+            ("asia_japan_se",   {"tl_y": 40.0,  "tl_x": 130.0,  "br_y": 22.58, "br_x": 145.0}),
+            ("asia_japan_east", {"tl_y": 60.38, "tl_x": 145.0,  "br_y": 22.58, "br_x": 176.47}),
+            # Remaining smaller zones — all well under 1500
+            ("africa",          {"tl_y": 39.0,  "tl_x": -29.0,   "br_y": -39.0, "br_x": 55.0}),
+            ("atlantic",        {"tl_y": 52.62, "tl_x": -50.9,   "br_y": 15.62, "br_x": -4.75}),
+            ("maldives",        {"tl_y": 10.72, "tl_x": 63.1,    "br_y": -6.08, "br_x": 86.53}),
+            ("northatlantic",   {"tl_y": 82.62, "tl_x": -84.53,  "br_y": 59.02, "br_x": 4.45}),
+        ]
+
+        seen_ids: set[str] = set()
+        all_flights: list = []
+        n = len(queries)
+        for i, (qname, zone) in enumerate(queries.items() if isinstance(queries, dict) else queries, 1):
+            bounds = fr.get_bounds(zone)
+            try:
+                zone_flights = fr.get_flights(bounds=bounds)
+            except Exception as ze:
+                print(f"  [FR24] {qname} ({i}/{n}): error: {ze}")
+            else:
+                new_count = 0
+                for f in zone_flights:
+                    if f.id not in seen_ids:
+                        seen_ids.add(f.id)
+                        all_flights.append(f)
+                        new_count += 1
+                print(f"  [FR24] {qname} ({i}/{n}): {len(zone_flights)} raw, +{new_count} new")
+            # Random jitter 1-3 s to spread load and avoid anomaly detection
+            if i < n:
+                time.sleep(random.uniform(1.0, 3.0))
+
         result["elapsed_s"] = round(time.monotonic() - t0, 2)
-        result["raw"] = flights
-        print(f"  [FR24] {len(flights)} flights ({result['elapsed_s']}s)")
+        result["raw"] = all_flights
+        print(f"  [FR24] total {len(all_flights)} unique flights ({result['elapsed_s']}s)")
     except Exception as exc:
         result["elapsed_s"] = round(time.monotonic() - t0, 2)
         result["error"] = str(exc)
         print(f"  [FR24] Exception: {exc}")
+    finally:
+        for k in _proxy_keys:
+            if _saved[k] is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = _saved[k]
 
     return result
 
@@ -401,13 +484,45 @@ def compute_overlap(
     }
 
 
+# ── Test history ─────────────────────────────────────────────────────────────
+# Seed rows for runs before history tracking was introduced.
+_INITIAL_HISTORY: list[str] = [
+    "| 2026-05-09 04:27 UTC | 5335 | 6125 | 0 | FR24: 403 Forbidden（无 Worker 代理） |",
+    "| 2026-05-11 01:54 UTC | 6386 | 6882 | 0 | FR24: 超时（Worker 已配置，HTTP_PROXY 未注入） |",
+]
+
+
+def extract_history_rows(report_path: Path) -> list[str]:
+    """Extract accumulated history rows from the report's section 8, if any."""
+    if not report_path.exists():
+        return []
+    text = report_path.read_text(encoding="utf-8")
+    marker = "## 8. 测试历史记录"
+    if marker not in text:
+        return []
+    section = text.split(marker, 1)[1]
+    rows = []
+    for line in section.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("| "):
+            continue
+        # skip header row and separator row
+        if "测试时间" in stripped or stripped.replace("|", "").replace("-", "").replace(":", "").strip() == "":
+            continue
+        rows.append(stripped)
+    return rows
+
+
 # ── Markdown report builder ───────────────────────────────────────────────────
 def build_markdown(
     fetch_meta: dict[str, dict],
     parsed: dict[str, list[dict]],
     regions: dict[str, dict[str, int]],
     overlap_pairs: list[dict],
+    history_rows: list[str] | None = None,
 ) -> str:
+    if history_rows is None:
+        history_rows = []
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines = [
         "# 数据源对比测试报告",
@@ -542,11 +657,21 @@ def build_markdown(
         "",
         "### FlightRadar24 使用注意",
         "",
-        "- 非官方SDK，无SLA保证，FR24可能随时更新接口格式导致解析失败",
-        "- 高频调用（<30s）可能触发IP封禁",
-        "- 数据格式相对稳定，字段最丰富（直接提供英尺/节单位，无需换算）",
+        "- 使用 `ddima16-flightradarapi` fork，通过 Cloudflare Worker 绕过 FR24 Cloudflare 封锁",
+        "- Worker 源码：https://github.com/DimaD16/cloudflare-workers-fr24-proxy （免费 100,000 次/天）",
+        "- CN 网络环境下，`requests` 库需经本地 HTTP 代理才能连通 CF Worker 域名；",
+        "  脚本已自动将 `HTTP_PROXY` 注入 `HTTPS_PROXY` 等环境变量，无需手动设置",
+        "- 非官方 SDK，FR24 可能随时更新接口；高频调用（<30s）可能触发 IP 封禁",
         "- 建议作为 OpenSky 完全失败时的备援，轮询间隔 ≥ 60s",
-    ]
+        "- 官方商业 API：https://fr24api.flightradar24.com/（需申请，付费）",
+        "",
+        "## 8. 测试历史记录",
+        "",
+        "> 每次运行脚本时自动追加，最新记录在最下方。",
+        "",
+        "| 测试时间 | OpenSky | AirLabs | FR24 | 备注 |",
+        "| -------- | ------: | ------: | ---: | ---- |",
+    ] + history_rows
 
     return "\n".join(lines) + "\n"
 
@@ -621,8 +746,22 @@ async def main() -> None:
         "airlabs":       al_meta,
         "flightradar24": fr_meta,
     }
-    md = build_markdown(fetch_meta, parsed, regions, overlap_pairs)
     report_path = REPO_ROOT / "docs" / "数据源对比测试报告.md"
+    history_rows = extract_history_rows(report_path)
+    if not history_rows:
+        history_rows = list(_INITIAL_HISTORY)
+    # Append current run
+    now_hist = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    fr_err = (fr_meta.get("error") or "").strip()
+    fr_hist_note = (
+        f"FR24: OK，{len(fr_flights)} 架"
+        if fr_flights
+        else (f"FR24: {fr_err[:50]}" if fr_err else "FR24: 0 架")
+    )
+    history_rows.append(
+        f"| {now_hist} | {len(os_flights)} | {len(al_flights)} | {len(fr_flights)} | {fr_hist_note} |"
+    )
+    md = build_markdown(fetch_meta, parsed, regions, overlap_pairs, history_rows)
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(md)
     print(f"\n>> Markdown报告: {report_path.relative_to(REPO_ROOT)}")
