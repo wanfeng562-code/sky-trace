@@ -29,10 +29,16 @@
 			:flights="store.filteredFlights"
 			:selected-flight-id="store.selectedFlightId"
 			:filter-status="store.filterStatus"
+			:filter-country="store.filterCountry"
+			:filter-country-mode="store.filterCountryMode"
+			:filter-region="store.filterRegion"
 			:ws-online="store.wsOnline"
 			@select="handleSelectFlight"
 			@search="store.searchKeyword = $event"
 			@filter="store.filterStatus = $event"
+			@filter-country="store.filterCountry = $event"
+			@filter-country-mode="store.filterCountryMode = $event"
+			@filter-region="store.filterRegion = $event"
 		/>
 	</div>
 </template>
@@ -636,7 +642,7 @@
 
 <style scoped>
 	.layout {
-		height: 100vh;
+		height: 100%;
 		display: flex;
 	}
 

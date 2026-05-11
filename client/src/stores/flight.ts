@@ -1,4 +1,4 @@
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { defineStore } from "pinia";
 
 import {
@@ -8,6 +8,12 @@ import {
 	fetchFlights,
 } from "../services/api";
 import { createFlightsSocket } from "../services/ws";
+import {
+	AIRPORT_TO_COUNTRY,
+	COUNTRIES,
+	type CountryFilterMode,
+	type SubRegion,
+} from "../data/countries";
 import type {
 	AirportInfo,
 	FlightBrief,
@@ -25,6 +31,9 @@ export const useFlightStore = defineStore("flight", () => {
 	const trackLoading = ref(false);
 	const searchKeyword = ref<string>("");
 	const filterStatus = ref<"all" | "airborne" | "on_ground">("all");
+	const filterCountry = ref<string | null>(null);
+	const filterCountryMode = ref<CountryFilterMode>("airspace");
+	const filterRegion = ref<string | null>(null);
 	const flightDetail = ref<FlightDetail | null>(null);
 	const detailLoading = ref(false);
 	const airports = ref<AirportInfo[]>([]);
@@ -123,7 +132,51 @@ export const useFlightStore = defineStore("flight", () => {
 			list = list.filter((flight) => (flight.altitude_ft ?? 0) <= 100);
 		}
 
+		if (filterCountry.value) {
+			const cc = filterCountry.value;
+			const country = COUNTRIES.find((c) => c.code === cc);
+			if (country) {
+				// Use sub-region bbox if one is selected, otherwise the country bbox
+				const region: SubRegion | undefined = filterRegion.value
+					? country.regions?.find((r) => r.code === filterRegion.value)
+					: undefined;
+				const bbox = region ?? country;
+				const regionAirports = region?.airports ?? country.airports;
+
+				if (filterCountryMode.value === "airspace") {
+					list = list.filter(
+						(f) =>
+							f.lat >= bbox.latMin &&
+							f.lat <= bbox.latMax &&
+							f.lon >= bbox.lonMin &&
+							f.lon <= bbox.lonMax,
+					);
+				} else if (filterCountryMode.value === "departure") {
+					const airportSet = new Set(regionAirports);
+					list = list.filter((f) => {
+						// eslint-disable-next-line @typescript-eslint/no-explicit-any
+						const dep = (f as any).departure_airport as string | undefined;
+						if (!dep) return false;
+						return airportSet.has(dep) || AIRPORT_TO_COUNTRY[dep] === cc;
+					});
+				} else if (filterCountryMode.value === "arrival") {
+					const airportSet = new Set(regionAirports);
+					list = list.filter((f) => {
+						// eslint-disable-next-line @typescript-eslint/no-explicit-any
+						const arr = (f as any).arrival_airport as string | undefined;
+						if (!arr) return false;
+						return airportSet.has(arr) || AIRPORT_TO_COUNTRY[arr] === cc;
+					});
+				}
+			}
+		}
+
 		return list;
+	});
+
+	// Reset sub-region when country changes
+	watch(filterCountry, () => {
+		filterRegion.value = null;
 	});
 
 	async function loadAirports() {
@@ -171,6 +224,9 @@ export const useFlightStore = defineStore("flight", () => {
 		total,
 		searchKeyword,
 		filterStatus,
+		filterCountry,
+		filterCountryMode,
+		filterRegion,
 		filteredFlights,
 		flightDetail,
 		detailLoading,

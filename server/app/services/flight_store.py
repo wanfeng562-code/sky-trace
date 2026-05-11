@@ -163,6 +163,18 @@ class FlightStore:
             needle = callsign.upper()
             flights = [f for f in flights if f.callsign and needle in f.callsign.upper()]
 
+        # Deduplicate: when both OpenSky (icao24-{hex}) and FR24 (fr24-{hex})
+        # entries exist for the same aircraft, keep only the OpenSky entry.
+        # FR24-only entries (no matching icao24 in OpenSky) are kept as-is.
+        opensky_icao24s = {
+            f.flight_id[7:] for f in flights if f.flight_id.startswith("icao24-")
+        }
+        if opensky_icao24s:
+            flights = [
+                f for f in flights
+                if not (f.flight_id.startswith("fr24-") and f.flight_id[5:] in opensky_icao24s)
+            ]
+
         if lat_min is not None:
             flights = [f for f in flights if f.lat >= lat_min]
         if lat_max is not None:

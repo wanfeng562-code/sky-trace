@@ -101,7 +101,7 @@ DASHBOARD_HTML = """<!doctype html>
     .grid {
       display: grid;
       gap: 12px;
-      grid-template-columns: repeat(4, minmax(140px, 1fr));
+      grid-template-columns: repeat(6, minmax(120px, 1fr));
     }
     .card {
       border: 1px solid var(--line);
@@ -183,7 +183,7 @@ DASHBOARD_HTML = """<!doctype html>
       font-weight: 600;
     }
     @media (max-width: 1024px) {
-      .grid { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+      .grid { grid-template-columns: repeat(3, minmax(120px, 1fr)); }
       .split { grid-template-columns: 1fr; }
     }
   </style>
@@ -256,6 +256,12 @@ DASHBOARD_HTML = """<!doctype html>
       </div>
     </section>
 
+    <section class="panel" id="fr24DetailSection" style="display:none">
+      <h3>FR24 On-demand Details <span style="font-size:13px;font-weight:normal;color:#f97316">(GET /api/v1/flights/{flight_id}/fr24-details)</span></h3>
+      <div class="muted">Click the <b>FR24详情</b> button in the flight table above to fetch aircraft age, full type name, trail, delay, and complete airport info.</div>
+      <pre class="raw" id="rawFr24Detail"></pre>
+    </section>
+
     <section class="panel">
       <div class="muted">
         Usage hints:
@@ -301,26 +307,38 @@ DASHBOARD_HTML = """<!doctype html>
       return '<div class="card"><div class="k">' + name + '</div><div class="v">' + value + '</div></div>';
     }
 
-    function renderSummary(summary) {
+    function renderSummary(summary, stats) {
+      const bySource = (stats && stats.by_source) || {};
+      const fr24Count = bySource.fr24 ?? 0;
+      const oskyCount = bySource.opensky ?? 0;
       const cards = [
         cardItem("Total flights", summary.total ?? "-"),
+        cardItem("FR24 flights", fr24Count),
+        cardItem("OpenSky flights", oskyCount),
         cardItem("Avg altitude ft", summary.avg_altitude_ft ?? "-"),
         cardItem("Avg speed kts", summary.avg_speed_kts ?? "-"),
-        cardItem("Latest update", summary.latest_updated_at ?? "-"),
+        cardItem("Latest update", summary.latest_updated_at ? summary.latest_updated_at.replace("T", " ").slice(0, 19) + " UTC" : "-"),
       ];
       document.getElementById("summaryCards").innerHTML = cards.join("");
     }
 
     function renderFlights(items) {
       const rows = items.map((f) => {
+        const isFr24 = (f.flight_id || "").startsWith("fr24-");
+        const badge = isFr24
+          ? '<span style="background:#f97316;color:#fff;border-radius:4px;padding:1px 5px;font-size:11px;margin-right:4px">FR24</span>'
+          : '<span style="background:#0a7a5b;color:#fff;border-radius:4px;padding:1px 5px;font-size:11px;margin-right:4px">OpenSky</span>';
+        const detailBtn = isFr24
+          ? ' <button class="btn" data-fr24-id="' + f.flight_id + '" style="border-color:#f97316">FR24详情</button>'
+          : "";
         return "<tr>"
-          + "<td>" + (f.flight_id ?? "") + "</td>"
+          + "<td>" + badge + (f.flight_id ?? "") + "</td>"
           + "<td>" + (f.callsign ?? "") + "</td>"
           + "<td>" + (f.lat ?? "") + "</td>"
           + "<td>" + (f.lon ?? "") + "</td>"
           + "<td>" + (f.altitude_ft ?? "") + "</td>"
           + "<td>" + (f.speed_kts ?? "") + "</td>"
-            + '<td><button class="btn" data-id="' + f.flight_id + '">View</button></td>'
+          + '<td><button class="btn" data-id="' + f.flight_id + '">基础</button>' + detailBtn + "</td>"
           + "</tr>";
       });
       document.getElementById("flightRows").innerHTML = rows.join("");
@@ -329,6 +347,12 @@ DASHBOARD_HTML = """<!doctype html>
         btn.addEventListener("click", async () => {
           selectedFlightId = btn.getAttribute("data-id");
           await loadDetail(selectedFlightId);
+        });
+      }
+      for (const btn of document.querySelectorAll("button[data-fr24-id]")) {
+        btn.addEventListener("click", async () => {
+          const fid = btn.getAttribute("data-fr24-id");
+          await loadFr24Detail(fid);
         });
       }
     }
@@ -377,11 +401,22 @@ DASHBOARD_HTML = """<!doctype html>
       for (const f of items) {
         const x = pad + ((f.lon - lonMin) / lonSpan) * (w - 2 * pad);
         const y = h - pad - ((f.lat - latMin) / latSpan) * (h - 2 * pad);
-        ctx.fillStyle = "#0a7a5b";
+        const isFr24 = (f.flight_id || "").startsWith("fr24-");
+        ctx.fillStyle = isFr24 ? "#f97316" : "#0a7a5b";
         ctx.beginPath();
-        ctx.arc(x, y, 4, 0, Math.PI * 2);
+        ctx.arc(x, y, isFr24 ? 3 : 4, 0, Math.PI * 2);
         ctx.fill();
       }
+
+      // Legend
+      ctx.fillStyle = "#0a7a5b";
+      ctx.beginPath(); ctx.arc(w - 110, h - 16, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#475569"; ctx.font = "11px Segoe UI";
+      ctx.fillText("OpenSky", w - 102, h - 12);
+      ctx.fillStyle = "#f97316";
+      ctx.beginPath(); ctx.arc(w - 50, h - 16, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#475569";
+      ctx.fillText("FR24", w - 42, h - 12);
 
       ctx.fillStyle = "#475569";
       ctx.font = "12px Segoe UI";
@@ -400,14 +435,29 @@ DASHBOARD_HTML = """<!doctype html>
       }
     }
 
+    async function loadFr24Detail(flightId) {
+      setStatus("Loading FR24 details for " + flightId + " ...");
+      try {
+        const detail = await apiGet("/api/v1/flights/" + encodeURIComponent(flightId) + "/fr24-details");
+        setRaw("rawFr24Detail", detail || {});
+        document.getElementById("fr24DetailSection").style.display = "";
+        setStatus("FR24 details loaded for " + flightId);
+      } catch (err) {
+        setStatus("FR24 detail: " + String(err), true);
+        setRaw("rawFr24Detail", { error: String(err) });
+        document.getElementById("fr24DetailSection").style.display = "";
+      }
+    }
+
     async function refreshAll() {
       try {
         const summary = await apiGet("/api/v1/flights/summary");
+        const stats = await apiGet("/api/v1/flights/summary/stats");
         const flightsPayload = await apiGet("/api/v1/flights?page=1&page_size=500");
         const items = (flightsPayload && flightsPayload.items) ? flightsPayload.items : [];
         latestFlights = items;
 
-        renderSummary(summary || {});
+        renderSummary(summary || {}, stats || {});
         renderFlights(items);
         drawScatter(items);
         setRaw("rawFlights", flightsPayload || {});
@@ -418,7 +468,7 @@ DASHBOARD_HTML = """<!doctype html>
         if (selectedFlightId) {
           await loadDetail(selectedFlightId);
         }
-        setStatus("Last refresh: " + new Date().toLocaleString() + " | flights=" + items.length);
+        setStatus("Last refresh: " + new Date().toLocaleString() + " | total=" + (stats && stats.total != null ? stats.total : (summary && summary.total != null ? summary.total : items.length)) + " (FR24: " + ((stats && stats.by_source && stats.by_source.fr24) || 0) + ", OpenSky: " + ((stats && stats.by_source && stats.by_source.opensky) || 0) + ")");
       } catch (err) {
         setStatus(String(err), true);
       }

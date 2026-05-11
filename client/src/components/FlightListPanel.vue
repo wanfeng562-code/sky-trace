@@ -21,6 +21,44 @@
 				{{ tab.label }}
 			</button>
 		</div>
+
+		<!-- 国家/地区筛选 -->
+		<div class="country-filter">
+			<select
+				class="country-select"
+				:value="filterCountry ?? ''"
+				@change="onCountryChange"
+			>
+				<option value="">全部国家/地区</option>
+				<option v-for="c in COUNTRIES" :key="c.code" :value="c.code">
+					{{ c.nameZh }}
+				</option>
+			</select>
+			<div v-if="filterCountry" class="mode-tabs">
+				<button
+					v-for="m in COUNTRY_MODES"
+					:key="m.value"
+					:class="['mode-btn', { active: filterCountryMode === m.value }]"
+					@click="emit('filterCountryMode', m.value)"
+				>
+					{{ m.label }}
+				</button>
+			</div>
+		</div>
+
+		<!-- 省/州/地区筛选（仅当所选国家有子区域时显示） -->
+		<select
+			v-if="filterCountry && currentRegions.length"
+			class="region-select"
+			:value="filterRegion ?? ''"
+			@change="onRegionChange"
+		>
+			<option value="">全部{{ currentCountryName }}地区</option>
+			<option v-for="r in currentRegions" :key="r.code" :value="r.code">
+				{{ r.nameZh }}
+			</option>
+		</select>
+
 		<p class="count-hint">共 {{ flights.length }} 架</p>
 		<RecycleScroller
 			class="scroller"
@@ -67,8 +105,13 @@
 </template>
 
 <script setup lang="ts">
-	import { ref } from "vue";
+	import { computed, ref } from "vue";
 	import { RecycleScroller } from "vue-virtual-scroller";
+	import {
+		COUNTRIES,
+		type CountryFilterMode,
+		type SubRegion,
+	} from "../data/countries";
 	import type { FlightBrief } from "../types/flight";
 
 	const STATUS_TABS = [
@@ -77,10 +120,19 @@
 		{ label: "地面", value: "on_ground" as const },
 	];
 
-	defineProps<{
+	const COUNTRY_MODES: { label: string; value: CountryFilterMode }[] = [
+		{ label: "领空内", value: "airspace" },
+		{ label: "出发", value: "departure" },
+		{ label: "到达", value: "arrival" },
+	];
+
+	const props = defineProps<{
 		flights: FlightBrief[];
 		selectedFlightId?: string | null;
 		filterStatus?: "all" | "airborne" | "on_ground";
+		filterCountry?: string | null;
+		filterCountryMode?: CountryFilterMode;
+		filterRegion?: string | null;
 		wsOnline?: boolean;
 	}>();
 
@@ -88,9 +140,28 @@
 		select: [flightId: string];
 		search: [keyword: string];
 		filter: [status: "all" | "airborne" | "on_ground"];
+		filterCountry: [country: string | null];
+		filterCountryMode: [mode: CountryFilterMode];
+		filterRegion: [region: string | null];
 	}>();
 
 	const localKeyword = ref("");
+
+	const currentRegions = computed<SubRegion[]>(
+		() => COUNTRIES.find((c) => c.code === props.filterCountry)?.regions ?? [],
+	);
+	const currentCountryName = computed(
+		() => COUNTRIES.find((c) => c.code === props.filterCountry)?.nameZh ?? "",
+	);
+
+	function onCountryChange(event: Event) {
+		const val = (event.target as HTMLSelectElement).value;
+		emit("filterCountry", val || null);
+	}
+	function onRegionChange(event: Event) {
+		const val = (event.target as HTMLSelectElement).value;
+		emit("filterRegion", val || null);
+	}
 </script>
 
 <style scoped>
@@ -156,6 +227,66 @@
 		background: #2563eb;
 		color: #ffffff;
 		border-color: #2563eb;
+	}
+
+	.country-filter {
+		margin-bottom: 6px;
+	}
+
+	.country-select {
+		width: 100%;
+		padding: 5px 8px;
+		border: 1px solid #d1d5db;
+		border-radius: 6px;
+		font-size: 12px;
+		background: #fff;
+		outline: none;
+		cursor: pointer;
+		box-sizing: border-box;
+	}
+
+	.country-select:focus {
+		border-color: #2563eb;
+	}
+
+	.region-select {
+		width: 100%;
+		padding: 5px 8px;
+		border: 1px solid #d1d5db;
+		border-radius: 6px;
+		font-size: 12px;
+		background: #f0f9ff;
+		outline: none;
+		cursor: pointer;
+		box-sizing: border-box;
+		margin-top: 4px;
+	}
+
+	.region-select:focus {
+		border-color: #0891b2;
+	}
+
+	.mode-tabs {
+		display: flex;
+		gap: 4px;
+		margin-top: 4px;
+	}
+
+	.mode-btn {
+		flex: 1;
+		padding: 3px 0;
+		border: 1px solid #e5e7eb;
+		border-radius: 4px;
+		background: #f9fafb;
+		font-size: 11px;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+
+	.mode-btn.active {
+		background: #0891b2;
+		color: #ffffff;
+		border-color: #0891b2;
 	}
 
 	.count-hint {

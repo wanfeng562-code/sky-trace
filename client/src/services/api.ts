@@ -7,6 +7,7 @@ import type {
 	FlightDetail,
 	FlightQueryParams,
 	FlightStats,
+	PlaybackData,
 	TrackPoint,
 } from "../types/flight";
 
@@ -70,5 +71,16 @@ export async function fetchFlightStats(): Promise<FlightStats> {
 
 export async function fetchAirports(): Promise<AirportInfo[]> {
 	const response = await api.get<ApiResponse<AirportInfo[]>>("/airports");
+	return response.data.data;
+}
+
+export async function fetchPlaybackFrames(
+	start: string,
+	end: string,
+	interval = 300,
+): Promise<PlaybackData> {
+	const response = await api.get<ApiResponse<PlaybackData>>("/playback", {
+		params: { start, end, interval },
+	});
 	return response.data.data;
 }

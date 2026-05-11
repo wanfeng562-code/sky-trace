@@ -208,11 +208,26 @@ async def get_flight_stats() -> ApiResponse:
 
     airborne = len(flights) - on_ground
 
+    # --- data source breakdown -------------------------------------------
+    by_source: dict[str, int] = {}
+    for f in flights:
+        fid = f.flight_id or ""
+        if fid.startswith("fr24-"):
+            src = "fr24"
+        elif fid.startswith("icao24-"):
+            src = "opensky"
+        elif fid.startswith("mock-"):
+            src = "mock"
+        else:
+            src = "other"
+        by_source[src] = by_source.get(src, 0) + 1
+
     return ApiResponse(
         data={
             "total": len(flights),
             "on_ground_count": on_ground,
             "airborne_count": airborne,
+            "by_source": by_source,
             "by_category": by_category,
             "by_altitude_band": by_altitude,
             "by_speed_band": by_speed,
@@ -247,6 +262,16 @@ async def get_flight_detail(flight_id: str) -> ApiResponse:
     data["departure_weather"] = _to_weather_info(dep_weather)
     data["arrival_weather"] = _to_weather_info(arr_weather)
 
+    # Fetch live weather at the flight's current position.
+    pos = detail.last_position
+    loc_weather: dict | None = None
+    try:
+        raw_loc = await unified_pipeline.fetch_weather_at_coords(pos.lat, pos.lon)
+        loc_weather = _to_weather_info(raw_loc)
+    except Exception:
+        pass
+    data["current_weather"] = loc_weather
+
     return ApiResponse(data=data)
 
 
@@ -260,3 +285,34 @@ async def get_flight_track(
 
     track = await flight_store.get_track(flight_id, since=since, until=until)
     return ApiResponse(data=[point.model_dump(mode="json") for point in track])
+
+
+@router.get("/flights/{flight_id}/fr24-details")
+async def get_fr24_flight_details(flight_id: str) -> ApiResponse:
+    """Fetch on-demand FR24 details for a single flight (machine age, full type name,
+    trail, time details, delay, complete airport info).
+
+    Only available for flights in the FR24 supplemental cache (``flight_id`` starting
+    with ``fr24-``).  The SDK call is made at request time and takes 1-3 s.
+
+    Returns 404 if the flight is not in the FR24 cache (e.g. OpenSky-only flights).
+    Returns 503 if FR24 is disabled (received 403 Forbidden) or not configured.
+    """
+    fr24_detail = await unified_pipeline.fetch_fr24_flight_detail(flight_id)
+    if fr24_detail is None:
+        # Distinguish between "no FR24 proxy configured" and "flight not in cache"
+        from app.core.config import settings as _settings
+        if not _settings.fr24_proxy_url.strip():
+            raise HTTPException(
+                status_code=503,
+                detail="FR24 is not configured (FR24_PROXY_URL not set).",
+            )
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "No FR24 detail available for this flight. "
+                "Flight may not be in the FR24 cache yet (cache refreshes every ~90 s), "
+                "or it is an OpenSky-only flight."
+            ),
+        )
+    return ApiResponse(data=fr24_detail)

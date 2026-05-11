@@ -41,6 +41,32 @@ export interface FlightDetail extends FlightBrief {
 	status: string | null;
 	departure_weather: WeatherInfo | null;
 	arrival_weather: WeatherInfo | null;
+	current_weather: WeatherInfo | null;
+}
+
+// 历史回放
+export interface PlaybackFlightPoint {
+	id: string;
+	lat: number;
+	lon: number;
+	alt: number | null;
+	spd: number | null;
+	hdg: number | null;
+	cat: number | null;
+	cs: string | null;
+}
+
+export interface PlaybackFrame {
+	ts: string;
+	flights: PlaybackFlightPoint[];
+}
+
+export interface PlaybackData {
+	start: string;
+	end: string;
+	interval_seconds: number;
+	total_frames: number;
+	frames: PlaybackFrame[];
 }
 
 // 列表接口筛选参数

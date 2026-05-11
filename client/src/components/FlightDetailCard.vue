@@ -54,6 +54,11 @@
 				<h4>到达地天气（{{ detail.arrival_airport }}）</h4>
 				<WeatherBlock :weather="detail.arrival_weather" />
 			</template>
+
+			<template v-if="detail.current_weather">
+				<h4>✈ 航班所在地天气</h4>
+				<WeatherBlock :weather="detail.current_weather" />
+			</template>
 		</template>
 	</aside>
 </template>

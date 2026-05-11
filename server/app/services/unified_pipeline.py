@@ -183,6 +183,9 @@ class UnifiedDataPipeline:
         # Set to True when FR24 returns 403 Forbidden; the loop stops and
         # the realtime layer falls back to OpenSky-only.
         self._fr24_disabled: bool = False
+        # Maps our flight_id ("fr24-{icao24}") → FR24 internal flight ID.
+        # Used by fetch_fr24_flight_detail() to call get_flight_details().
+        self._fr24_id_map: dict[str, str] = {}
 
     async def start(self) -> None:
         if self._running:
@@ -356,10 +359,23 @@ class UnifiedDataPipeline:
             await self._maybe_save_snapshot(updates)
 
         if self._broadcast_manager and updates:
+            # Build the broadcast payload: OpenSky flights + FR24 flights that
+            # don't duplicate an already-tracked icao24 from OpenSky.
+            broadcast_flights: list[FlightBrief] = list(updates)
+            if self._fr24_cache and not self._fr24_disabled:
+                opensky_icao24s = {
+                    f.flight_id[7:] for f in updates if f.flight_id.startswith("icao24-")
+                }
+                for fr24_f in self._fr24_cache:
+                    fid = fr24_f.flight_id
+                    # Skip fr24 entry when OpenSky already tracks the same aircraft
+                    if fid.startswith("fr24-") and fid[5:] in opensky_icao24s:
+                        continue
+                    broadcast_flights.append(fr24_f)
             event = WsEvent(
                 event="snapshot",
                 ts=_utc_now(),
-                data=[f.model_dump(mode="json") for f in updates],
+                data=[f.model_dump(mode="json") for f in broadcast_flights],
             )
             await self._broadcast_manager.broadcast(event)
 
@@ -784,6 +800,7 @@ class UnifiedDataPipeline:
             if collected:
                 now = _utc_now()
                 new_cache: list[FlightBrief] = []
+                new_id_map: dict[str, str] = {}
                 for f in collected:
                     lat = _safe_float(getattr(f, "latitude", None))
                     lon = _safe_float(getattr(f, "longitude", None))
@@ -796,8 +813,12 @@ class UnifiedDataPipeline:
                     callsign = str(getattr(f, "callsign", "") or "").strip() or None
                     if not icao24 and not callsign:
                         continue
+                    fid = f"fr24-{icao24}" if icao24 else f"fr24-{callsign}"
+                    fr24_internal_id = str(getattr(f, "id", "") or "").strip()
+                    if fr24_internal_id:
+                        new_id_map[fid] = fr24_internal_id
                     new_cache.append(FlightBrief(
-                        flight_id=f"fr24-{icao24}" if icao24 else f"fr24-{callsign}",
+                        flight_id=fid,
                         callsign=callsign,
                         lat=round(lat, 6),
                         lon=round(lon, 6),
@@ -832,15 +853,71 @@ class UnifiedDataPipeline:
                         )
 
                 self._fr24_cache = new_cache
+                self._fr24_id_map = new_id_map
                 logger.info(
                     "FR24 background collect complete: %d unique flights cached, "
-                    "commercial enrichment queued", len(new_cache)
+                    "%d with internal IDs, commercial enrichment queued",
+                    len(new_cache), len(new_id_map),
                 )
 
             # Layer-2 cool-down: 20-30 s quiet window before starting next round.
             # Total cycle = ~60-70 s (scan) + 20-30 s (cool-down) ≈ 80-100 s.
             if self._running:
                 await asyncio.sleep(random.uniform(20.0, 30.0))
+
+    async def fetch_fr24_flight_detail(self, flight_id: str) -> dict | None:
+        """On-demand call to FR24 get_flight_details() for a single flight.
+
+        ``flight_id`` is our internal key (e.g. ``"fr24-abc123"``).  We look up the
+        corresponding FR24 internal flight ID from ``_fr24_id_map`` and then call
+        ``get_flight_details()`` in a thread executor to avoid blocking the event loop.
+
+        Returns the raw details dict from the SDK, or ``None`` if unavailable.
+        """
+        if self._fr24_disabled:
+            return None
+        proxy_url = settings.fr24_proxy_url.strip()
+        if not proxy_url:
+            return None
+        fr24_internal_id = self._fr24_id_map.get(flight_id)
+        if not fr24_internal_id:
+            return None
+
+        try:
+            from FlightRadar24 import FlightRadar24API  # type: ignore[import]
+        except ImportError:
+            return None
+
+        import os as _os
+        _proxy_keys = ("HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy")
+
+        def _sync_get_detail() -> dict | None:
+            _saved = {k: _os.environ.get(k) for k in _proxy_keys}
+            http_proxy = (settings.http_proxy or "").strip() or None
+            if http_proxy:
+                for k in _proxy_keys:
+                    _os.environ[k] = http_proxy
+            try:
+                fr = FlightRadar24API(proxy_url=proxy_url)
+                details = fr.get_flight_details(fr24_internal_id)
+                if not details:
+                    return None
+                # Sanitize: ensure the result is a plain dict
+                return dict(details) if not isinstance(details, dict) else details
+            finally:
+                for k in _proxy_keys:
+                    if _saved[k] is None:
+                        _os.environ.pop(k, None)
+                    else:
+                        _os.environ[k] = _saved[k]
+
+        loop = asyncio.get_event_loop()
+        try:
+            result = await loop.run_in_executor(None, _sync_get_detail)
+        except Exception as exc:
+            logger.warning("FR24 on-demand detail fetch failed for %s: %s", flight_id, exc)
+            return None
+        return result
 
     async def _fetch_flightradar_snapshot(self) -> list[FlightBrief]:
         """Fetch real-time flights via the ddima16-flightradarapi SDK (Cloudflare-bypass fork).
@@ -1310,6 +1387,20 @@ class UnifiedDataPipeline:
         if weather is None and aq is None:
             return None
         return {"weather": weather, "air_quality": aq}
+
+    async def fetch_weather_at_coords(self, lat: float, lon: float) -> dict[str, Any] | None:
+        """Fetch live OpenWeather data at arbitrary coordinates.
+
+        Used for the flight's current position ("location weather").
+        Returns ``None`` when OpenWeather is not configured or the request fails.
+        """
+        if not settings.openweather_api_key:
+            return None
+        try:
+            return await self._fetch_openweather_by_coords(lat, lon)
+        except Exception as exc:
+            logger.debug("fetch_weather_at_coords(%.4f, %.4f) failed: %s", lat, lon, exc)
+            return None
 
     # ------------------------------------------------------------------
     # Quota monitoring
