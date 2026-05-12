@@ -5,8 +5,21 @@
 		<div v-if="loading" class="loading-text">加载中...</div>
 
 		<template v-else-if="detail">
-			<h3>{{ detail.callsign || detail.flight_id }}</h3>
-			<p class="flight-id">{{ detail.flight_id }}</p>
+			<div class="card-header">
+				<div>
+					<h3>{{ detail.callsign || detail.flight_id }}</h3>
+					<p class="flight-id">{{ detail.flight_id }}</p>
+				</div>
+				<img
+					v-if="detail.airline_iata"
+					:src="`https://airlabs.co/img/airline/m/${detail.airline_iata}.png`"
+					class="airline-logo"
+					:alt="detail.airline_iata"
+					@error="
+						(e) => ((e.target as HTMLImageElement).style.display = 'none')
+					"
+				/>
+			</div>
 
 			<table class="info-table">
 				<tbody>
@@ -41,6 +54,14 @@
 					<tr v-if="detail.aircraft_type">
 						<td>机型</td>
 						<td>{{ detail.aircraft_type }}</td>
+					</tr>
+					<tr v-if="detail.dep_time">
+						<td>计划起飞</td>
+						<td>{{ detail.dep_time }}</td>
+					</tr>
+					<tr v-if="detail.arr_time">
+						<td>计划到达</td>
+						<td>{{ detail.arr_time }}</td>
 					</tr>
 				</tbody>
 			</table>
@@ -132,8 +153,24 @@
 	}
 
 	h3 {
-		margin: 0 24px 2px 0;
+		margin: 0 0 2px 0;
 		font-size: 16px;
+	}
+
+	.card-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		margin-bottom: 10px;
+		margin-right: 24px;
+	}
+
+	.airline-logo {
+		width: 48px;
+		height: 48px;
+		object-fit: contain;
+		border-radius: 4px;
+		flex-shrink: 0;
 	}
 
 	h4 {

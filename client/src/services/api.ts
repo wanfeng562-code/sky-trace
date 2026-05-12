@@ -3,11 +3,13 @@ import axios from "axios";
 import type {
 	ApiResponse,
 	AirportInfo,
+	AirQualityHub,
 	FlightBrief,
 	FlightDetail,
 	FlightQueryParams,
 	FlightStats,
 	PlaybackData,
+	ScheduleEntry,
 	TrackPoint,
 } from "../types/flight";
 
@@ -83,4 +85,34 @@ export async function fetchPlaybackFrames(
 		params: { start, end, interval },
 	});
 	return response.data.data;
+}
+
+export async function fetchAirQuality(): Promise<AirQualityHub[]> {
+	const response = await api.get<ApiResponse<Record<string, unknown>>>(
+		"/datahub/air_quality",
+	);
+	const raw = response.data.data as Record<string, unknown>;
+	// Backend returns dict: { IATA: { aqi, lat, lon, components, ... } }
+	return Object.entries(raw).map(([iata, v]) => {
+		const entry = v as Record<string, unknown>;
+		return {
+			iata,
+			lat: (entry.lat as number) ?? 0,
+			lon: (entry.lon as number) ?? 0,
+			aqi: (entry.aqi as number) ?? 0,
+			pm2_5: (entry.components as Record<string, number> | undefined)?.pm2_5,
+			pm10: (entry.components as Record<string, number> | undefined)?.pm10,
+		};
+	});
+}
+
+export async function fetchAirportSchedules(
+	iata: string,
+	direction = "dep",
+): Promise<ScheduleEntry[]> {
+	const response = await api.get<ApiResponse<ScheduleEntry[]>>(
+		`/airports/${iata}/schedules`,
+		{ params: { direction } },
+	);
+	return response.data.data ?? [];
 }

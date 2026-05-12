@@ -76,7 +76,18 @@
 			>
 				<div class="flight-main">
 					<strong>{{ flight.callsign || flight.flight_id }}</strong>
-					<span class="altitude">{{ flight.altitude_ft ?? "--" }} ft</span>
+					<div class="flight-right">
+						<img
+							v-if="flight.airline_iata"
+							:src="`https://airlabs.co/img/airline/m/${flight.airline_iata}.png`"
+							class="list-airline-logo"
+							:alt="flight.airline_iata"
+							@error="
+								(e) => ((e.target as HTMLImageElement).style.display = 'none')
+							"
+						/>
+						<span class="altitude">{{ flight.altitude_ft ?? "--" }} ft</span>
+					</div>
 				</div>
 				<div class="flight-sub">
 					<span>{{
@@ -321,7 +332,21 @@
 	.flight-main {
 		display: flex;
 		justify-content: space-between;
+		align-items: center;
 		font-size: 13px;
+	}
+
+	.flight-right {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.list-airline-logo {
+		width: 20px;
+		height: 20px;
+		object-fit: contain;
+		border-radius: 2px;
 	}
 
 	.altitude {

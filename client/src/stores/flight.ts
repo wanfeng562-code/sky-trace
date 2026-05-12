@@ -3,6 +3,8 @@ import { defineStore } from "pinia";
 
 import {
 	fetchAirports,
+	fetchAirQuality,
+	fetchAirportSchedules,
 	fetchFlightDetail,
 	fetchFlightTrack,
 	fetchFlights,
@@ -16,8 +18,10 @@ import {
 } from "../data/countries";
 import type {
 	AirportInfo,
+	AirQualityHub,
 	FlightBrief,
 	FlightDetail,
+	ScheduleEntry,
 	TrackPoint,
 } from "../types/flight";
 
@@ -38,6 +42,11 @@ export const useFlightStore = defineStore("flight", () => {
 	const detailLoading = ref(false);
 	const airports = ref<AirportInfo[]>([]);
 	const airportsLoaded = ref(false);
+	const airQualityData = ref<AirQualityHub[]>([]);
+	const showAqiLayer = ref(false);
+	const scheduleAirport = ref<string | null>(null);
+	const scheduleEntries = ref<ScheduleEntry[]>([]);
+	const scheduleLoading = ref(false);
 
 	async function loadInitialFlights() {
 		loading.value = true;
@@ -154,16 +163,14 @@ export const useFlightStore = defineStore("flight", () => {
 				} else if (filterCountryMode.value === "departure") {
 					const airportSet = new Set(regionAirports);
 					list = list.filter((f) => {
-						// eslint-disable-next-line @typescript-eslint/no-explicit-any
-						const dep = (f as any).departure_airport as string | undefined;
+						const dep = f.departure_airport;
 						if (!dep) return false;
 						return airportSet.has(dep) || AIRPORT_TO_COUNTRY[dep] === cc;
 					});
 				} else if (filterCountryMode.value === "arrival") {
 					const airportSet = new Set(regionAirports);
 					list = list.filter((f) => {
-						// eslint-disable-next-line @typescript-eslint/no-explicit-any
-						const arr = (f as any).arrival_airport as string | undefined;
+						const arr = f.arrival_airport;
 						if (!arr) return false;
 						return airportSet.has(arr) || AIRPORT_TO_COUNTRY[arr] === cc;
 					});
@@ -186,6 +193,26 @@ export const useFlightStore = defineStore("flight", () => {
 			airportsLoaded.value = true;
 		} catch {
 			// 失败时保持空列表，不阻塞其他功能
+		}
+	}
+
+	async function loadAirQuality() {
+		try {
+			airQualityData.value = await fetchAirQuality();
+		} catch {
+			// ignore
+		}
+	}
+
+	async function loadSchedules(iata: string, direction = "dep") {
+		scheduleAirport.value = iata;
+		scheduleLoading.value = true;
+		try {
+			scheduleEntries.value = await fetchAirportSchedules(iata, direction);
+		} catch {
+			scheduleEntries.value = [];
+		} finally {
+			scheduleLoading.value = false;
 		}
 	}
 
@@ -231,11 +258,18 @@ export const useFlightStore = defineStore("flight", () => {
 		flightDetail,
 		detailLoading,
 		airports,
+		airQualityData,
+		showAqiLayer,
+		scheduleAirport,
+		scheduleEntries,
+		scheduleLoading,
 		loadInitialFlights,
 		connectSocket,
 		disconnectSocket,
 		selectFlight,
 		loadFlightDetail,
 		loadAirports,
+		loadAirQuality,
+		loadSchedules,
 	};
 });

@@ -359,19 +359,8 @@ class UnifiedDataPipeline:
             await self._maybe_save_snapshot(updates)
 
         if self._broadcast_manager and updates:
-            # Build the broadcast payload: OpenSky flights + FR24 flights that
-            # don't duplicate an already-tracked icao24 from OpenSky.
-            broadcast_flights: list[FlightBrief] = list(updates)
-            if self._fr24_cache and not self._fr24_disabled:
-                opensky_icao24s = {
-                    f.flight_id[7:] for f in updates if f.flight_id.startswith("icao24-")
-                }
-                for fr24_f in self._fr24_cache:
-                    fid = fr24_f.flight_id
-                    # Skip fr24 entry when OpenSky already tracks the same aircraft
-                    if fid.startswith("fr24-") and fid[5:] in opensky_icao24s:
-                        continue
-                    broadcast_flights.append(fr24_f)
+            # Use enriched list from flight_store (includes commercial dep/arr/airline data)
+            broadcast_flights = await self._flight_store.list_flights()
             event = WsEvent(
                 event="snapshot",
                 ts=_utc_now(),
@@ -553,6 +542,9 @@ class UnifiedDataPipeline:
             arr = f.get("arr_iata") or f.get("arr_icao")
             ac = f.get("aircraft_icao")
             status = f.get("status") or "en-route"
+            airline_iata = f.get("airline_iata")
+            dep_time = f.get("dep_time")
+            arr_time = f.get("arr_time")
             await self._flight_store.upsert_detail_extra(
                 cs,
                 departure_airport=dep,
@@ -560,6 +552,9 @@ class UnifiedDataPipeline:
                 aircraft_type=ac,
                 status=status,
                 source="airlabs",
+                airline_iata=airline_iata,
+                dep_time=dep_time,
+                arr_time=arr_time,
             )
             count += 1
 
@@ -849,6 +844,7 @@ class UnifiedDataPipeline:
                                 aircraft_type=ac_type,
                                 status=None,
                                 source="fr24",
+                                airline_iata=al_iata,
                             )
                         )
 
@@ -1405,6 +1401,49 @@ class UnifiedDataPipeline:
     # ------------------------------------------------------------------
     # Quota monitoring
     # ------------------------------------------------------------------
+
+    _schedules_cache: dict[str, tuple[float, list[dict]]] = {}
+
+    async def fetch_airport_schedules(self, iata: str, direction: str = "dep") -> list[dict]:
+        """Fetch departure or arrival schedules for an airport via AirLabs /schedules.
+
+        Results are cached for 5 minutes to conserve API quota.
+        Returns an empty list when AirLabs is not configured or the request fails.
+        """
+        import time
+        if not settings.airlabs_api_key:
+            return []
+        cache_key = f"{iata.upper()}:{direction}"
+        now = time.monotonic()
+        if cache_key in self._schedules_cache:
+            cached_at, cached_data = self._schedules_cache[cache_key]
+            if now - cached_at < 300:
+                return cached_data
+
+        session = self._require_session()
+        url = f"{settings.airlabs_base_url.rstrip('/')}/schedules"
+        param_key = "dep_iata" if direction == "dep" else "arr_iata"
+        params = {"api_key": settings.airlabs_api_key, param_key: iata.upper()}
+        try:
+            async with session.get(url, params=params, proxy=self._proxy) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    logger.warning("AirLabs schedules HTTP %d: %s", resp.status, text[:200])
+                    return []
+                payload = await resp.json(content_type=None)
+        except Exception as exc:
+            logger.warning("AirLabs schedules fetch failed: %s", exc)
+            return []
+
+        if isinstance(payload, dict) and isinstance(payload.get("response"), list):
+            data = payload["response"]
+        elif isinstance(payload, list):
+            data = payload
+        else:
+            data = []
+
+        self._schedules_cache[cache_key] = (now, data)
+        return data
 
     async def get_quota(self) -> dict[str, Any]:
         """Return today’s API call counts and configured budgets."""

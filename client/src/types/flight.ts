@@ -6,6 +6,10 @@ export interface FlightBrief {
 	heading?: number;
 	speed_kts?: number;
 	altitude_ft?: number;
+	aircraft_category?: number;
+	departure_airport?: string;
+	arrival_airport?: string;
+	airline_iata?: string;
 	updated_at: string;
 }
 
@@ -39,6 +43,9 @@ export interface FlightDetail extends FlightBrief {
 	arrival_airport: string | null;
 	aircraft_type: string | null;
 	status: string | null;
+	dep_time?: string;
+	arr_time?: string;
+	airline_iata?: string;
 	departure_weather: WeatherInfo | null;
 	arrival_weather: WeatherInfo | null;
 	current_weather: WeatherInfo | null;
@@ -91,4 +98,25 @@ export interface AirportInfo {
 	name: string;
 	lat: number;
 	lon: number;
+}
+
+// 空气质量
+export interface AirQualityHub {
+	iata: string;
+	lat: number;
+	lon: number;
+	aqi: number;
+	pm2_5?: number;
+	pm10?: number;
+}
+
+// 机场时刻表
+export interface ScheduleEntry {
+	flight_iata?: string;
+	dep_iata?: string;
+	arr_iata?: string;
+	dep_time?: string;
+	arr_time?: string;
+	status?: string;
+	airline_iata?: string;
 }

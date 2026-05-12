@@ -6,6 +6,13 @@
 				<span>{{
 					store.loading ? "loading..." : `${store.flights.length} flights`
 				}}</span>
+				<button
+					:class="['aqi-btn', { active: store.showAqiLayer }]"
+					@click="store.showAqiLayer = !store.showAqiLayer"
+					title="空气质量叠加层"
+				>
+					AQI
+				</button>
 			</header>
 
 			<div class="map-shell">
@@ -22,6 +29,7 @@
 					:loading="store.detailLoading"
 					@close="handleSelectFlight(null)"
 				/>
+				<SchedulePanel />
 			</div>
 		</section>
 
@@ -56,8 +64,14 @@
 
 	import FlightDetailCard from "../components/FlightDetailCard.vue";
 	import FlightListPanel from "../components/FlightListPanel.vue";
+	import SchedulePanel from "../components/SchedulePanel.vue";
 	import { useFlightStore } from "../stores/flight";
-	import type { AirportInfo, FlightBrief } from "../types/flight";
+	import { COUNTRIES } from "../data/countries";
+	import type {
+		AirportInfo,
+		AirQualityHub,
+		FlightBrief,
+	} from "../types/flight";
 
 	const MAP_SOURCE_ID = "flights";
 	const MAP_LAYER_ID = "flight-points";
@@ -70,6 +84,12 @@
 	const MAP_AIRPORT_HIGHLIGHT_SOURCE_ID = "airports-highlight";
 	const MAP_AIRPORT_HIGHLIGHT_LAYER_ID = "airport-highlight-points";
 	const MAP_AIRPORT_HIGHLIGHT_LABEL_ID = "airport-highlight-labels";
+	const MAP_AQI_SOURCE_ID = "aqi-hubs";
+	const MAP_AQI_LAYER_ID = "aqi-circles";
+	const MAP_AQI_LABEL_LAYER_ID = "aqi-labels";
+
+	/** AQI 等级颜色：1=优良, 2=良好, 3=轻度污染, 4=中度污染, 5=重度污染 */
+	const AQI_COLORS = ["#00e400", "#ffff00", "#ff7e00", "#ff0000", "#8f3f97"];
 
 	const store = useFlightStore();
 	const mapContainer = ref<HTMLElement | null>(null);
@@ -81,6 +101,29 @@
 	async function handleSelectFlight(flightId: string | null) {
 		await store.selectFlight(flightId);
 		store.loadFlightDetail(flightId);
+	}
+
+	function toAirQualityGeoJson(
+		list: AirQualityHub[],
+	): GeoJSON.FeatureCollection<GeoJSON.Point> {
+		return {
+			type: "FeatureCollection",
+			features: list
+				.filter((h) => h.aqi > 0 && h.lat && h.lon)
+				.map((h) => ({
+					type: "Feature",
+					geometry: { type: "Point", coordinates: [h.lon, h.lat] },
+					properties: { iata: h.iata, aqi: h.aqi, pm2_5: h.pm2_5 ?? null },
+				})),
+		};
+	}
+
+	function updateAqiLayer() {
+		if (!map.value) return;
+		const src = map.value.getSource(MAP_AQI_SOURCE_ID) as
+			| GeoJSONSource
+			| undefined;
+		src?.setData(toAirQualityGeoJson(store.airQualityData));
 	}
 
 	function toAirportGeoJson(
@@ -568,9 +611,78 @@
 				mapInstance.getCanvas().style.cursor = "";
 			});
 
+			// 点击机场标记打开时刻表面板
+			mapInstance.on("click", MAP_AIRPORT_LAYER_ID, (event) => {
+				const feature = event.features?.[0];
+				if (!feature) return;
+				const iata = feature.properties?.iata as string | undefined;
+				if (iata) store.scheduleAirport = iata;
+			});
+			mapInstance.on("mouseenter", MAP_AIRPORT_LAYER_ID, () => {
+				mapInstance.getCanvas().style.cursor = "pointer";
+			});
+			mapInstance.on("mouseleave", MAP_AIRPORT_LAYER_ID, () => {
+				mapInstance.getCanvas().style.cursor = "";
+			});
+
 			updateFlightLayer(store.flights);
 			updateSelectedFlightHighlight();
 			updateTrackLayer();
+
+			// AQI circles overlay
+			mapInstance.addSource(MAP_AQI_SOURCE_ID, {
+				type: "geojson",
+				data: toAirQualityGeoJson(store.airQualityData),
+			});
+
+			mapInstance.addLayer({
+				id: MAP_AQI_LAYER_ID,
+				type: "circle",
+				source: MAP_AQI_SOURCE_ID,
+				layout: { visibility: "none" },
+				paint: {
+					"circle-radius": 20,
+					"circle-opacity": 0.65,
+					"circle-stroke-width": 1.5,
+					"circle-stroke-color": "#ffffff",
+					"circle-color": [
+						"step",
+						["get", "aqi"],
+						AQI_COLORS[0], // aqi < 2
+						2,
+						AQI_COLORS[1],
+						3,
+						AQI_COLORS[2],
+						4,
+						AQI_COLORS[3],
+						5,
+						AQI_COLORS[4],
+					],
+				},
+			});
+
+			mapInstance.addLayer({
+				id: MAP_AQI_LABEL_LAYER_ID,
+				type: "symbol",
+				source: MAP_AQI_SOURCE_ID,
+				layout: {
+					visibility: "none",
+					"text-field": [
+						"concat",
+						["get", "iata"],
+						"\nAQI:",
+						["to-string", ["get", "aqi"]],
+					],
+					"text-size": 10,
+					"text-anchor": "center",
+					"text-font": ["Noto Sans Regular"],
+				},
+				paint: {
+					"text-color": "#111827",
+					"text-halo-color": "#ffffff",
+					"text-halo-width": 1.5,
+				},
+			});
 		});
 
 		map.value = mapInstance;
@@ -586,6 +698,29 @@
 				_flightUpdateTimer = null;
 				updateFlightLayer(newFlights);
 			}, 1500);
+		},
+	);
+
+	// 国家/地区筛选时自动聚焦地图视野
+	watch(
+		[() => store.filterCountry, () => store.filterRegion],
+		([cc, region]) => {
+			if (!map.value || !cc) return;
+			const country = COUNTRIES.find((c) => c.code === cc);
+			if (!country) return;
+			const bbox =
+				region != null
+					? (country.regions?.find((r) => r.code === region) ?? country)
+					: country;
+			map.value.fitBounds(
+				[
+					bbox.lonMin,
+					bbox.latMin,
+					bbox.lonMax,
+					bbox.latMax,
+				] as LngLatBoundsLike,
+				{ padding: 60, maxZoom: 8, essential: true },
+			);
 		},
 	);
 
@@ -622,11 +757,34 @@
 		},
 	);
 
+	// AQI 图层显示/隐藏
+	watch(
+		() => store.showAqiLayer,
+		(show) => {
+			if (!map.value) return;
+			const vis = show ? "visible" : "none";
+			if (map.value.getLayer(MAP_AQI_LAYER_ID))
+				map.value.setLayoutProperty(MAP_AQI_LAYER_ID, "visibility", vis);
+			if (map.value.getLayer(MAP_AQI_LABEL_LAYER_ID))
+				map.value.setLayoutProperty(MAP_AQI_LABEL_LAYER_ID, "visibility", vis);
+		},
+	);
+
+	// AQI 数据更新
+	watch(
+		() => store.airQualityData,
+		() => {
+			updateAqiLayer();
+		},
+		{ deep: true },
+	);
+
 	onMounted(async () => {
 		initMap();
 		await store.loadInitialFlights();
 		store.connectSocket();
 		store.loadAirports();
+		store.loadAirQuality();
 	});
 
 	onUnmounted(() => {
@@ -661,6 +819,23 @@
 		padding: 0 16px;
 		border-bottom: 1px solid #d1d5db;
 		background: #f8fafc;
+	}
+
+	.aqi-btn {
+		padding: 4px 12px;
+		border: 1px solid #d1d5db;
+		border-radius: 6px;
+		background: #f9fafb;
+		font-size: 12px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+
+	.aqi-btn.active {
+		background: #10b981;
+		color: #ffffff;
+		border-color: #10b981;
 	}
 
 	.map-shell {

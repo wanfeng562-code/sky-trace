@@ -1,9 +1,9 @@
 # Sky-Trace API 接口契约文档模板
 
 ## 1. 文档信息
-- 文档版本：v0.1.0
+- 文档版本：v0.5.0
 - 维护人：项目负责人（后端）
-- 最近更新：2026-04-13
+- 最近更新：2026-05-12
 - 适用范围：client 与 server 联调
 
 ## 2. 约定与原则
@@ -37,13 +37,23 @@
 
 ## 4. 接口清单
 
-| 接口名称 | 方法 | 路径                              | 说明                     | 状态 |
-| -------- | ---- | --------------------------------- | ------------------------ | ---- |
-| 航班列表 | GET  | /api/v1/flights                   | 查询航班列表（支持筛选） | TODO |
-| 航班详情 | GET  | /api/v1/flights/{flight_id}       | 查询单航班详情           | TODO |
-| 航班轨迹 | GET  | /api/v1/flights/{flight_id}/track | 查询轨迹点列表           | TODO |
-| 服务健康 | GET  | /api/v1/health                    | 服务可用性检查           | TODO |
-| 实时推送 | WS   | /api/v1/ws/flights                | 推送实时航班增量         | TODO |
+| 接口名称   | 方法 | 路径                              | 说明                                  | 状态   |
+| ---------- | ---- | --------------------------------- | ------------------------------------- | ------ |
+| 航班列表   | GET  | /api/v1/flights                   | 查询航班列表（支持筛选）              | 已联调 |
+| 航班详情   | GET  | /api/v1/flights/{flight_id}       | 查询单航班详情（含计划时间/天气）     | 已联调 |
+| 航班轨迹   | GET  | /api/v1/flights/{flight_id}/track | 查询轨迹点列表                        | 已联调 |
+| 航班统计   | GET  | /api/v1/flights/summary/stats     | 聚合统计（总数/分类/高度/速度）       | 已联调 |
+| 采集状态   | GET  | /api/v1/datahub/status            | 三层采集状态                          | 已联调 |
+| 天气数据   | GET  | /api/v1/datahub/weather           | 20 枢纽天气缓存（IATA 键字典）        | 已联调 |
+| 最近天气   | GET  | /api/v1/datahub/weather/nearest   | 按坐标返回最近枢纽天气 + AQI          | 已联调 |
+| 空气质量   | GET  | /api/v1/datahub/air_quality       | 20 枢纽 AQI 缓存（IATA 键字典）       | 已联调 |
+| 商业层数据 | GET  | /api/v1/datahub/commercial        | AirLabs 富集数据缓存                  | 已联调 |
+| 额度统计   | GET  | /api/v1/datahub/quota             | 各 API 今日调用计数与预算             | 已联调 |
+| 聚合快照   | GET  | /api/v1/datahub/snapshot          | status+flights+weather+AQI+commercial | 已联调 |
+| 历史回放   | GET  | /api/v1/playback                  | 按时间范围查询历史快照帧              | 已联调 |
+| 机场时刻表 | GET  | /api/v1/airports/{iata}/schedules | 机场离港/到港时刻表（5min 缓存）      | 已联调 |
+| 服务健康   | GET  | /api/v1/health                    | 服务可用性检查                        | 已联调 |
+| 实时推送   | WS   | /api/v1/ws/flights                | 推送实时航班快照（全量替换模式）      | 已联调 |
 
 ## 5. 接口详情模板
 
@@ -94,6 +104,12 @@ Host: 127.0.0.1:8000
         "heading": 180,
         "speed_kts": 420,
         "altitude_ft": 32000,
+        "aircraft_category": 4,
+        "departure_airport": "PEK",
+        "arrival_airport": "CAN",
+        "airline_iata": "CA",
+        "dep_time": "2026-05-12T08:00:00Z",
+        "arr_time": "2026-05-12T10:30:00Z",
         "updated_at": "2026-04-12T14:30:00Z"
       }
     ]
@@ -124,27 +140,34 @@ Host: 127.0.0.1:8000
 ### 6.2 消息结构
 ```json
 {
-  "event": "flight_update",
-  "ts": "2026-04-12T14:30:00Z",
-  "data": {
-    "flight_id": "abc123",
-    "lat": 23.12,
-    "lon": 113.26,
-    "heading": 180,
-    "speed_kts": 420,
-    "altitude_ft": 32000
-  }
+  "event": "snapshot",
+  "ts": "2026-05-12T14:30:00Z",
+  "data": [
+    {
+      "flight_id": "abc123",
+      "callsign": "CCA1234",
+      "lat": 23.12,
+      "lon": 113.26,
+      "heading": 180,
+      "speed_kts": 420,
+      "altitude_ft": 32000,
+      "aircraft_category": 4,
+      "departure_airport": "PEK",
+      "arrival_airport": "CAN",
+      "airline_iata": "CA",
+      "dep_time": "2026-05-12T08:00:00Z",
+      "arr_time": "2026-05-12T10:30:00Z",
+      "updated_at": "2026-05-12T14:30:00Z"
+    }
+  ]
 }
 ```
 
 ### 6.3 事件清单
 
-| event         | 说明           | data 结构          |
-| ------------- | -------------- | ------------------ |
-| snapshot      | 全量快照       | FlightBrief[]      |
-| flight_update | 单航班增量更新 | FlightBrief        |
-| flight_remove | 航班离线       | { flight_id }      |
-| server_notice | 服务通知       | { level, message } |
+| event    | 说明                     | data 结构     |
+| -------- | ------------------------ | ------------- |
+| snapshot | 全量快照（全量替换模式） | FlightBrief[] |
 
 ## 7. 联调验收清单
 - 航班列表字段完整且类型正确
@@ -155,9 +178,10 @@ Host: 127.0.0.1:8000
 
 ## 8. 变更记录
 
-| 日期       | 版本   | 变更内容 | 变更人 |
-| ---------- | ------ | -------- | ------ |
-| YYYY-MM-DD | v0.1.0 | 初始模板 | XXX    |
+| 日期       | 版本   | 变更内容                                                                                                                                                               | 变更人 |
+| ---------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| 2026-04-13 | v0.1.0 | 初始模板                                                                                                                                                               | —      |
+| 2026-05-12 | v0.5.0 | 补全全部已实现接口；新增 datahub/air_quality、airports/{iata}/schedules；更新 WS 协议为全量快照模式；FlightBrief 新增 aircraft_category/airline_iata/dep_time/arr_time | —      |
 
 ---
 使用建议：每次接口或字段改动，先改本文件再改代码，保证契约先行。

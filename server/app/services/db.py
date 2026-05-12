@@ -64,6 +64,9 @@ CREATE TABLE IF NOT EXISTS flight_details_extra (
     aircraft_type     TEXT,
     status            TEXT,
     source            TEXT,
+    airline_iata      TEXT,
+    dep_time          TEXT,
+    arr_time          TEXT,
     updated_at        TEXT NOT NULL
 );
 """
@@ -77,6 +80,16 @@ async def init_db() -> None:
     _db = await aiosqlite.connect(str(path))
     _db.row_factory = aiosqlite.Row
     await _db.executescript(_DDL)
+    # Migration: add columns that may not exist in pre-existing databases
+    for alter in [
+        "ALTER TABLE flight_details_extra ADD COLUMN airline_iata TEXT",
+        "ALTER TABLE flight_details_extra ADD COLUMN dep_time TEXT",
+        "ALTER TABLE flight_details_extra ADD COLUMN arr_time TEXT",
+    ]:
+        try:
+            await _db.execute(alter)
+        except Exception:
+            pass  # Column already exists
     await _db.commit()
     logger.info("SQLite initialised at %s", path.resolve())
 

@@ -18,6 +18,8 @@ class FlightStore:
         self._lock = asyncio.Lock()
         self._flights: dict[str, FlightBrief] = {}
         self._tracks: dict[str, list[TrackPoint]] = defaultdict(list)
+        # In-memory commercial enrichment cache: callsign → extra fields dict
+        self._commercial: dict[str, dict] = {}
 
     # ------------------------------------------------------------------
     # Write path
@@ -106,8 +108,20 @@ class FlightStore:
         aircraft_type: str | None,
         status: str | None,
         source: str,
+        airline_iata: str | None = None,
+        dep_time: str | None = None,
+        arr_time: str | None = None,
     ) -> None:
         """Persist commercial-API-enriched detail fields for a callsign."""
+        # Update in-memory commercial cache
+        self._commercial[callsign] = {
+            "departure_airport": departure_airport,
+            "arrival_airport": arrival_airport,
+            "airline_iata": airline_iata,
+            "dep_time": dep_time,
+            "arr_time": arr_time,
+        }
+
         try:
             db = get_db()
         except RuntimeError:
@@ -118,14 +132,18 @@ class FlightStore:
             await db.execute(
                 """
                 INSERT INTO flight_details_extra
-                    (callsign, departure_airport, arrival_airport, aircraft_type, status, source, updated_at)
-                VALUES (:callsign, :dep, :arr, :ac, :status, :source, :now)
+                    (callsign, departure_airport, arrival_airport, aircraft_type, status, source,
+                     airline_iata, dep_time, arr_time, updated_at)
+                VALUES (:callsign, :dep, :arr, :ac, :status, :source, :airline_iata, :dep_time, :arr_time, :now)
                 ON CONFLICT (callsign) DO UPDATE SET
                     departure_airport = excluded.departure_airport,
                     arrival_airport   = excluded.arrival_airport,
                     aircraft_type     = excluded.aircraft_type,
                     status            = excluded.status,
                     source            = excluded.source,
+                    airline_iata      = excluded.airline_iata,
+                    dep_time          = excluded.dep_time,
+                    arr_time          = excluded.arr_time,
                     updated_at        = excluded.updated_at
                 """,
                 {
@@ -135,6 +153,9 @@ class FlightStore:
                     "ac": aircraft_type,
                     "status": status,
                     "source": source,
+                    "airline_iata": airline_iata,
+                    "dep_time": dep_time,
+                    "arr_time": arr_time,
                     "now": now,
                 },
             )
@@ -184,7 +205,20 @@ class FlightStore:
         if lon_max is not None:
             flights = [f for f in flights if f.lon <= lon_max]
 
-        return flights
+        # Enrich with commercial data from in-memory cache
+        enriched: list[FlightBrief] = []
+        for f in flights:
+            cs = f.callsign
+            if cs and cs in self._commercial:
+                extra = self._commercial[cs]
+                f = f.model_copy(update={
+                    "departure_airport": extra.get("departure_airport"),
+                    "arrival_airport": extra.get("arrival_airport"),
+                    "airline_iata": extra.get("airline_iata"),
+                })
+            enriched.append(f)
+
+        return enriched
 
     async def get_flight(self, flight_id: str) -> FlightDetail | None:
         async with self._lock:
@@ -194,7 +228,7 @@ class FlightStore:
             tracks = list(self._tracks.get(flight_id, []))
 
         # Attempt to enrich from commercial DB row.
-        dep = arr = ac_type = flight_status = None
+        dep = arr = ac_type = flight_status = dep_time = arr_time = airline_iata = None
         if flight.callsign:
             extra = await self._load_detail_extra(flight.callsign)
             if extra:
@@ -202,6 +236,9 @@ class FlightStore:
                 arr = extra["arrival_airport"]
                 ac_type = extra["aircraft_type"]
                 flight_status = extra["status"]
+                dep_time = extra.get("dep_time")
+                arr_time = extra.get("arr_time")
+                airline_iata = extra.get("airline_iata")
 
         return FlightDetail(
             flight_id=flight.flight_id,
@@ -210,6 +247,9 @@ class FlightStore:
             arrival_airport=arr,
             aircraft_type=ac_type,
             status=flight_status or "enroute",
+            dep_time=dep_time,
+            arr_time=arr_time,
+            airline_iata=airline_iata,
             last_position=flight,
             track_points=tracks,
         )

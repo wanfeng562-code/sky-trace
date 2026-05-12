@@ -696,11 +696,23 @@ zones = fr.get_zones()  # 返回含 subzones 的嵌套 dict
 - 应用场景：高污染天气时在前端地图显示特殊标记；为飞行员/分析员提供能见度参考
 - **实现建议：** 在 `unified_pipeline.py` 中新增 `_collect_air_quality()` 方法，以 BBOX 中心点（纬度≈23.5, 经度≈112）每小时请求一次
 
+> **✅ 已实现（2026-05-12）**
+> - `unified_pipeline.py` 的 `_collect_environment()` 已对 20 个枢纽机场并发采集空气质量，与天气数据分离存入 `_air_quality_cache`
+> - 新增 `GET /api/v1/datahub/air_quality` 端点，返回 IATA 键字典（含 `aqi`、`pm2_5`、`pm10`、`components`）
+> - 前端新增 `fetchAirQuality()` → `store.airQualityData`，地图工具栏 AQI 按钮切换圆形叠加层
+> - AQI 等级色阶：1=`#00e400`（优良）/ 2=`#ffff00`（良好）/ 3=`#ff7e00`（轻度）/ 4=`#ff0000`（中度）/ 5=`#8f3f97`（重度）
+
 #### ✅ 5.1.2 航班延误信息（AirLabs `/flight` 单条详情）
 
 - 当前批量 `/flights` 已返回基础状态，但不含延误分钟数
 - 对特定关注航班可调用 `/flight?flight_iata=XX`，获取 `dep_delayed`、`arr_delayed`
 - **节约额度建议：** 仅对状态异常的航班（非 `en-route`）触发单条查询
+
+> **✅ 已实现（2026-05-12）**
+> - 未使用单条详情查询（节约额度），改为从 AirLabs 批量 `/flights` 数据中提取 `dep_time`/`arr_time` 字段
+> - `FlightBrief`/`FlightDetail` 新增 `dep_time`/`arr_time`/`airline_iata`，通过 `_commercial` 内存缓存实时富集到 WS 快照
+> - `flight_details_extra` 表新增对应列，支持重启后恢复
+> - 前端 `FlightDetailCard.vue` 展示"计划起飞"/"计划到达"两行，`FlightDetail` schema 已扩展
 
 #### ✅ 5.1.3 离港/到港机场时刻表（AirLabs `/schedules`）
 
@@ -708,11 +720,23 @@ zones = fr.get_zones()  # 返回含 subzones 的嵌套 dict
 - 结合 OpenSky 实时位置，可验证某航班是否已按时起飞
 - **实现建议：** 对项目监控的主要机场（如 ZGGG 广州、ZGSZ 深圳）每小时轮询一次
 
+> **✅ 已实现（2026-05-12）**
+> - `unified_pipeline.py` 新增 `fetch_airport_schedules(iata, direction)` 方法，内置 5 分钟内存缓存（`_schedules_cache`）
+> - 调用 AirLabs `/schedules?iata={IATA}&direction={dep|arr}`，按需查询，无主动轮询（节约额度）
+> - 新增后端端点 `GET /api/v1/airports/{iata}/schedules?direction=dep|arr`
+> - 新增前端 `SchedulePanel.vue` 组件：点击地图机场标记自动触发，支持离港/到港 Tab 切换，含状态色标与航司 Logo
+
 #### ✅ 5.1.4 飞机扩展分类（OpenSky `extended=1`）
 
 - 在现有 `/states/all` 请求中加入 `extended=1`，**不增加额外额度消耗**
 - 可获得飞机类别字段（商用大型、旋翼机、无人机等）
 - **实现建议：** 修改 `_collect_realtime()` 的 bbox 请求，追加 `extended=1`
+
+> **✅ 已实现（2026-05-12）**
+> - `_collect_realtime()` 已对 OpenSky `/states/all` 追加 `extended=1` 参数
+> - states 数组 index 17 即为 `aircraft_category`（0=unknown, 2=light, 4=large, 6=heavy, 8=rotorcraft, 14=UAV）
+> - `FlightBrief` 新增 `aircraft_category: int | None`，随 WS 快照推送至前端
+> - 前端 `FlightBrief` 类型已包含 `aircraft_category?: number`，`StatsView.vue` 可按类别统计
 
 #### 🔶 5.1.5 静态航线数据库本地缓存（AirLabs `/routes`）
 
@@ -720,11 +744,18 @@ zones = fr.get_zones()  # 返回含 subzones 的嵌套 dict
 - 用于丰富前端"常规航线"展示，无需实时调用
 - **额度评估：** 按机场逐一下载，每机场 1 次请求（Free 50条/次），可覆盖 ZGSZ/ZGGG/ZGHA/ZGKL 等约10个机场 → 消耗约 10 次额度
 
-#### 🔶 5.1.6 航空公司 Logo 展示（AirLabs 静态图片）
+#### ✅ 5.1.6 航空公司 Logo 展示（AirLabs 静态图片）
 
 - `https://airlabs.co/img/airline/m/{IATA}.png` **无需 API Key，完全免费**
 - 直接在前端使用，为航班卡片添加航空公司 Logo
 - **无额度消耗**
+
+> **✅ 已实现（2026-05-12）**
+> - `FlightBrief`/`FlightDetail` 均含 `airline_iata` 字段，由商业层（AirLabs/FR24）富集
+> - `FlightDetailCard.vue` 右上角展示 48×48px Logo，`<img @error>` 自动隐藏加载失败的图片
+> - `FlightListPanel.vue` 每行显示 20px Logo 缩略图
+> - `SchedulePanel.vue` 时刻表每行显示对应航司 Logo
+> - URL 格式：`https://airlabs.co/img/airline/m/{airline_iata}.png`
 
 #### 🔶 5.1.7 机场元信息本地缓存（AirLabs `/airports`）
 

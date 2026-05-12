@@ -316,3 +316,15 @@ async def get_fr24_flight_details(flight_id: str) -> ApiResponse:
             ),
         )
     return ApiResponse(data=fr24_detail)
+
+
+@router.get("/airports/{iata}/schedules")
+async def get_airport_schedules(
+    iata: str,
+    direction: str = Query(default="dep", description="'dep' for departures, 'arr' for arrivals"),
+) -> ApiResponse:
+    """Return departure or arrival schedule for an airport via AirLabs /schedules."""
+    if direction not in ("dep", "arr"):
+        raise HTTPException(status_code=400, detail="direction must be 'dep' or 'arr'")
+    data = await unified_pipeline.fetch_airport_schedules(iata.upper(), direction)
+    return ApiResponse(data=data)
