@@ -1,50 +1,97 @@
 <template>
 	<div class="stats-page">
-		<div v-if="loading" class="loading-overlay">加载中...</div>
+		<div v-if="loading" class="stats-loading">
+			<div class="stats-spinner"></div>
+			<span>加载中...</span>
+		</div>
 
 		<div v-else class="stats-body">
-			<h2 class="stats-title">
-				航班统计看板 <span class="refresh-hint">自动刷新 30s</span>
-			</h2>
-			<div class="summary-cards">
-				<div class="card">
-					<div class="card-value">{{ stats.total }}</div>
-					<div class="card-label">总追踪航班</div>
+			<!-- KPI 英雄行 -->
+			<div class="kpi-row">
+				<div class="kpi-card">
+					<div class="kpi-icon kpi-total">
+						<svg viewBox="0 0 20 20" fill="currentColor">
+							<path
+								d="M10 2a8 8 0 100 16A8 8 0 0010 2zm1 11H9v-4h2v4zm0-6H9V5h2v2z"
+							/>
+						</svg>
+					</div>
+					<div class="kpi-main">
+						<div class="kpi-num">{{ stats.total }}</div>
+						<div class="kpi-label">总追踪航班</div>
+					</div>
 				</div>
-				<div class="card card-air">
-					<div class="card-value">{{ stats.airborne_count }}</div>
-					<div class="card-label">飞行中</div>
+				<div class="kpi-card kpi-airborne">
+					<div class="kpi-icon">
+						<svg viewBox="0 0 20 20" fill="currentColor">
+							<path
+								d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"
+							/>
+						</svg>
+					</div>
+					<div class="kpi-main">
+						<div class="kpi-num">{{ stats.airborne_count }}</div>
+						<div class="kpi-label">飞行中</div>
+						<div class="kpi-pct" v-if="stats.total > 0">
+							{{ ((stats.airborne_count / stats.total) * 100).toFixed(1) }}%
+						</div>
+					</div>
 				</div>
-				<div class="card card-ground">
-					<div class="card-value">{{ stats.on_ground_count }}</div>
-					<div class="card-label">在地面</div>
+				<div class="kpi-card kpi-ground">
+					<div class="kpi-icon">
+						<svg viewBox="0 0 20 20" fill="currentColor">
+							<path
+								fill-rule="evenodd"
+								d="M5 2a2 2 0 00-2 2v14l3.5-2 3.5 2 3.5-2 3.5 2V4a2 2 0 00-2-2H5zm4.707 3.707a1 1 0 00-1.414-1.414l-3 3a1 1 0 000 1.414l3 3a1 1 0 001.414-1.414L8.414 9H11a1 1 0 000-2H8.414l1.293-1.293z"
+								clip-rule="evenodd"
+							/>
+						</svg>
+					</div>
+					<div class="kpi-main">
+						<div class="kpi-num">{{ stats.on_ground_count }}</div>
+						<div class="kpi-label">在地面</div>
+						<div class="kpi-pct" v-if="stats.total > 0">
+							{{ ((stats.on_ground_count / stats.total) * 100).toFixed(1) }}%
+						</div>
+					</div>
 				</div>
 				<div
 					v-for="(cnt, src) in stats.by_source"
 					:key="src"
-					class="card card-source"
+					class="kpi-card kpi-source"
 				>
-					<div class="card-value">{{ cnt }}</div>
-					<div class="card-label">{{ srcLabel(src) }}</div>
+					<div class="kpi-icon">
+						<svg viewBox="0 0 20 20" fill="currentColor">
+							<path
+								fill-rule="evenodd"
+								d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm3.293 1.293a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L7.586 10 5.293 7.707a1 1 0 010-1.414zM11 12a1 1 0 100 2h3a1 1 0 100-2h-3z"
+								clip-rule="evenodd"
+							/>
+						</svg>
+					</div>
+					<div class="kpi-main">
+						<div class="kpi-num">{{ cnt }}</div>
+						<div class="kpi-label">{{ srcLabel(src) }}</div>
+					</div>
 				</div>
 			</div>
 
 			<!-- 图表区域 -->
 			<div class="charts-grid">
 				<div class="chart-panel">
-					<h3>飞行状态分布</h3>
+					<div class="chart-title">飞行状态分布</div>
 					<div ref="statusChartEl" class="chart-canvas"></div>
 				</div>
 				<div class="chart-panel">
-					<h3>高度分布</h3>
+					<div class="chart-title">高度分布</div>
 					<div ref="altChartEl" class="chart-canvas"></div>
 				</div>
 				<div class="chart-panel">
-					<h3>速度分布</h3>
+					<div class="chart-title">速度分布</div>
 					<div ref="spdChartEl" class="chart-canvas"></div>
 				</div>
 				<div class="chart-panel chart-wide">
-					<h3>前 20 航司前缀排行</h3>
+					<div class="chart-title">前 20 航司前缀排行</div>
 					<div ref="prefixChartEl" class="chart-canvas chart-tall"></div>
 				</div>
 			</div>
@@ -53,7 +100,7 @@
 </template>
 
 <script setup lang="ts">
-	import { onMounted, onUnmounted, ref } from "vue";
+	import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 	import * as echarts from "echarts/core";
 	import { BarChart, PieChart } from "echarts/charts";
 	import {
@@ -63,6 +110,7 @@
 	} from "echarts/components";
 	import { CanvasRenderer } from "echarts/renderers";
 	import axios from "axios";
+	import { useFlightStore } from "../stores/flight";
 
 	echarts.use([
 		BarChart,
@@ -74,6 +122,7 @@
 	]);
 
 	const API = import.meta.env.VITE_API_BASE_URL as string;
+	const store = useFlightStore();
 
 	interface StatsData {
 		total: number;
@@ -138,6 +187,8 @@
 			const res = await axios.get(`${API}/flights/summary/stats`);
 			stats.value = res.data.data;
 			loading.value = false;
+			// nextTick ensures v-else chart containers are in the DOM before echarts.init
+			await nextTick();
 			renderCharts();
 		} catch {
 			// keep loading state, retry on next interval
@@ -153,8 +204,9 @@
 
 	function renderStatusChart() {
 		if (!statusChartEl.value) return;
-		if (!statusChart) statusChart = echarts.init(statusChartEl.value);
+		if (!statusChart) statusChart = echarts.init(statusChartEl.value, "dark");
 		statusChart.setOption({
+			backgroundColor: "transparent",
 			tooltip: { trigger: "item" },
 			legend: {
 				bottom: 0,
@@ -187,10 +239,11 @@
 
 	function renderAltChart() {
 		if (!altChartEl.value) return;
-		if (!altChart) altChart = echarts.init(altChartEl.value);
+		if (!altChart) altChart = echarts.init(altChartEl.value, "dark");
 		const band = stats.value.by_altitude_band;
 		const keys = ["ground", "low_<5k", "medium_5-25k", "high_>25k", "unknown"];
 		altChart.setOption({
+			backgroundColor: "transparent",
 			tooltip: { trigger: "axis" },
 			grid: { left: 10, right: 10, bottom: 30, top: 16, containLabel: true },
 			xAxis: {
@@ -212,7 +265,7 @@
 
 	function renderSpdChart() {
 		if (!spdChartEl.value) return;
-		if (!spdChart) spdChart = echarts.init(spdChartEl.value);
+		if (!spdChart) spdChart = echarts.init(spdChartEl.value, "dark");
 		const band = stats.value.by_speed_band;
 		const keys = [
 			"stationary_<30kts",
@@ -222,6 +275,7 @@
 			"unknown",
 		];
 		spdChart.setOption({
+			backgroundColor: "transparent",
 			tooltip: { trigger: "axis" },
 			grid: { left: 10, right: 10, bottom: 30, top: 16, containLabel: true },
 			xAxis: {
@@ -243,9 +297,10 @@
 
 	function renderPrefixChart() {
 		if (!prefixChartEl.value) return;
-		if (!prefixChart) prefixChart = echarts.init(prefixChartEl.value);
+		if (!prefixChart) prefixChart = echarts.init(prefixChartEl.value, "dark");
 		const top = stats.value.top_callsign_prefixes.slice(0, 20);
 		prefixChart.setOption({
+			backgroundColor: "transparent",
 			tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
 			grid: { left: 60, right: 20, bottom: 10, top: 10, containLabel: false },
 			xAxis: { type: "value", axisLabel: { fontSize: 10 } },
@@ -273,6 +328,14 @@
 		prefixChart?.resize();
 	}
 
+	// WS 推送新快照时立即刷新统计，无需等待30s轮询间隔
+	watch(
+		() => store.flights,
+		() => {
+			loadStats();
+		},
+	);
+
 	onMounted(() => {
 		loadStats();
 		refreshTimer = setInterval(loadStats, 30_000);
@@ -292,34 +355,35 @@
 <style scoped>
 	.stats-page {
 		height: 100%;
-		background: #f5f7fb;
+		background: var(--bg-base);
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
 	}
 
-	.stats-title {
-		margin: 0 0 16px;
-		font-size: 17px;
-		color: #111827;
-		display: flex;
-		align-items: center;
-		gap: 10px;
-	}
-
-	.refresh-hint {
-		font-size: 12px;
-		color: #9ca3af;
-		font-weight: 400;
-	}
-
-	.loading-overlay {
+	.stats-loading {
 		flex: 1;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		font-size: 18px;
-		color: #6b7280;
+		gap: 10px;
+		color: var(--text-secondary);
+		font-size: 14px;
+	}
+
+	.stats-spinner {
+		width: 20px;
+		height: 20px;
+		border-radius: 50%;
+		border: 2px solid var(--border);
+		border-top-color: var(--accent);
+		animation: spin 0.8s linear infinite;
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 
 	.stats-body {
@@ -328,67 +392,119 @@
 		overflow-y: auto;
 	}
 
-	.summary-cards {
+	/* ── KPI 英雄行 */
+	.kpi-row {
 		display: flex;
 		gap: 12px;
 		flex-wrap: wrap;
 		margin-bottom: 20px;
 	}
 
-	.card {
-		background: #ffffff;
-		border-radius: 8px;
-		padding: 16px 20px;
-		min-width: 120px;
-		box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+	.kpi-card {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 14px 18px;
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-lg);
+		min-width: 140px;
+		flex: 1;
 	}
 
-	.card-value {
-		font-size: 28px;
+	.kpi-icon {
+		width: 36px;
+		height: 36px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: var(--radius-md);
+		background: var(--bg-raised);
+		color: var(--text-muted);
+		flex-shrink: 0;
+	}
+
+	.kpi-icon svg {
+		width: 18px;
+		height: 18px;
+	}
+
+	.kpi-total .kpi-icon {
+		background: var(--accent-subtle);
+		color: var(--accent);
+	}
+	.kpi-airborne .kpi-icon {
+		background: var(--success-subtle);
+		color: var(--success);
+	}
+	.kpi-ground .kpi-icon {
+		background: rgba(148, 163, 184, 0.15);
+		color: var(--text-secondary);
+	}
+	.kpi-source .kpi-icon {
+		background: rgba(14, 165, 233, 0.15);
+		color: #0ea5e9;
+	}
+
+	.kpi-main {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.kpi-num {
+		font-size: 26px;
 		font-weight: 700;
-		color: #111827;
+		color: var(--text-primary);
 		line-height: 1;
+		font-variant-numeric: tabular-nums;
 	}
 
-	.card-label {
-		font-size: 12px;
-		color: #6b7280;
-		margin-top: 4px;
+	.kpi-airborne .kpi-num {
+		color: var(--success);
+	}
+	.kpi-source .kpi-num {
+		color: #0ea5e9;
 	}
 
-	.card-air .card-value {
-		color: #2563eb;
+	.kpi-label {
+		font-size: 11px;
+		color: var(--text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
 	}
 
-	.card-ground .card-value {
-		color: #6b7280;
+	.kpi-pct {
+		font-size: 11px;
+		color: var(--text-secondary);
+		font-variant-numeric: tabular-nums;
 	}
 
-	.card-source .card-value {
-		color: #0891b2;
-	}
-
+	/* ── 图表区域 */
 	.charts-grid {
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
-		gap: 16px;
+		gap: 14px;
 	}
 
 	.chart-panel {
-		background: #ffffff;
-		border-radius: 8px;
-		padding: 16px;
-		box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-lg);
+		padding: 14px 16px;
 	}
 
 	.chart-wide {
 		grid-column: 1 / -1;
 	}
 
-	.chart-panel h3 {
-		margin: 0 0 12px;
-		font-size: 13px;
-		color: #374151;
+	.chart-title {
+		font-size: 12px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--text-secondary);
+		margin-bottom: 10px;
 	}
 
 	.chart-canvas {

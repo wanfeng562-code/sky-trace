@@ -78,6 +78,16 @@ class Settings(BaseSettings):
     fr24_proxy_url: str = ""
 
     openweather_api_key: str = ""
+
+    # MapTiler Cloud API key (for tile proxy and PlaybackView basemap).
+    # Get a free key at https://cloud.maptiler.com/account/keys/
+    # Free tier: 100,000 map loads/month.
+    maptiler_api_key: str = ""
+
+    # Stadia Maps API key (fallback basemap provider).
+    # Get a free key at https://client.stadiamaps.com/
+    # Free tier: unlimited non-commercial use with attribution.
+    stadia_api_key: str = ""
     openweather_city: str = "Guangzhou"
     openweather_base_url: str = "https://api.openweathermap.org/data/2.5"
     # Reference coordinates for /air_pollution (falls back to city coord from weather response)

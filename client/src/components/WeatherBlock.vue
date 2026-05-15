@@ -1,32 +1,41 @@
 <template>
-	<table class="info-table">
-		<tbody>
-			<tr>
-				<td>温度</td>
-				<td>{{ weather.temp_c ?? "--" }} °C</td>
-			</tr>
-			<tr>
-				<td>湿度</td>
-				<td>{{ weather.humidity_pct ?? "--" }} %</td>
-			</tr>
-			<tr>
-				<td>风速</td>
-				<td>{{ weather.wind_speed_mps ?? "--" }} m/s</td>
-			</tr>
-			<tr v-if="weather.wind_deg != null">
-				<td>风向</td>
-				<td>{{ weather.wind_deg }}°</td>
-			</tr>
-			<tr>
-				<td>能见度</td>
-				<td>{{ weather.visibility_m ?? "--" }} m</td>
-			</tr>
-			<tr v-if="weather.description">
-				<td>天气</td>
-				<td>{{ weather.description }}</td>
-			</tr>
-		</tbody>
-	</table>
+	<div class="wx-grid">
+		<div class="wx-item">
+			<span class="wx-val">{{ weather.temp_c ?? "--" }}</span>
+			<span class="wx-unit">°C</span>
+			<span class="wx-key">温度</span>
+		</div>
+		<div class="wx-item">
+			<span class="wx-val">{{ weather.humidity_pct ?? "--" }}</span>
+			<span class="wx-unit">%</span>
+			<span class="wx-key">湿度</span>
+		</div>
+		<div class="wx-item">
+			<span class="wx-val">{{ weather.wind_speed_mps ?? "--" }}</span>
+			<span class="wx-unit">m/s</span>
+			<span class="wx-key">风速</span>
+		</div>
+		<div class="wx-item">
+			<span class="wx-val">{{
+				weather.wind_deg != null ? weather.wind_deg + "°" : "--"
+			}}</span>
+			<span class="wx-unit"></span>
+			<span class="wx-key">风向</span>
+		</div>
+		<div class="wx-item">
+			<span class="wx-val">{{
+				weather.visibility_m != null
+					? (weather.visibility_m / 1000).toFixed(1)
+					: "--"
+			}}</span>
+			<span class="wx-unit">km</span>
+			<span class="wx-key">能见度</span>
+		</div>
+		<div v-if="weather.description" class="wx-item wx-desc">
+			<span class="wx-val wx-val-sm">{{ weather.description }}</span>
+			<span class="wx-key">天气</span>
+		</div>
+	</div>
 </template>
 
 <script setup lang="ts">
@@ -38,19 +47,50 @@
 </script>
 
 <style scoped>
-	.info-table {
-		width: 100%;
-		border-collapse: collapse;
-		font-size: 13px;
+	.wx-grid {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 6px;
+		padding: 8px 0;
 	}
 
-	.info-table td {
-		padding: 4px 0;
-		vertical-align: top;
+	.wx-item {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 2px;
+		background: var(--bg-raised, #263349);
+		border-radius: var(--radius-sm, 4px);
+		padding: 6px 4px;
 	}
 
-	.info-table td:first-child {
-		color: #6b7280;
-		width: 80px;
+	.wx-val {
+		font-size: 16px;
+		font-weight: 700;
+		color: var(--text-primary, #e2e8f0);
+		line-height: 1;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.wx-val-sm {
+		font-size: 11px;
+		text-align: center;
+	}
+
+	.wx-unit {
+		font-size: 10px;
+		color: var(--text-muted, #64748b);
+		line-height: 1;
+	}
+
+	.wx-key {
+		font-size: 10px;
+		color: var(--text-secondary, #94a3b8);
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+	}
+
+	.wx-desc {
+		grid-column: 1 / -1;
 	}
 </style>
