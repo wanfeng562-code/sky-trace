@@ -186,10 +186,10 @@ export const useFlightStore = defineStore("flight", () => {
 		filterRegion.value = null;
 	});
 
-	async function loadAirports() {
-		if (airportsLoaded.value) return;
+	async function loadAirports(force = false) {
+		if (airportsLoaded.value && !force) return;
 		try {
-			airports.value = await fetchAirports();
+			airports.value = await fetchAirports(force);
 			airportsLoaded.value = true;
 		} catch {
 			// 失败时保持空列表，不阻塞其他功能

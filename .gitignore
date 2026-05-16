@@ -234,3 +234,5 @@ server/data/sky_trace.db-wal
 .dev.vars*
 !.dev.vars.example
 !.env.example
+docs/_full_user_timeline_extracted.txt
+docs/_window_history_analysis.txt

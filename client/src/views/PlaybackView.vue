@@ -921,6 +921,8 @@
 				center: [MAP_INIT_LNG, MAP_INIT_LAT],
 				zoom: MAP_INIT_ZOOM,
 				attributionControl: true,
+				localIdeographFontFamily:
+					"Noto Sans CJK SC, Microsoft YaHei, SimHei, sans-serif",
 				refreshExpiredTiles: false,
 				maxTileCacheSize: 2048,
 				maxTileCacheZoomLevels: 8,

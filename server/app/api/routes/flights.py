@@ -3,7 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
 
 from app.models.schemas import ApiResponse
-from app.services.unified_pipeline import HUB_INFO
+from app.services.db import list_airports as db_list_airports
 from app.state import flight_store, unified_pipeline
 
 router = APIRouter(prefix="/api/v1", tags=["flights"])
@@ -238,8 +238,62 @@ async def get_flight_stats() -> ApiResponse:
 
 @router.get("/airports", summary="List monitored hub airports with coordinates")
 async def list_airports() -> ApiResponse:
-    """Return the static list of monitored hub airports (IATA, name, lat, lon)."""
-    return ApiResponse(data=list(HUB_INFO.values()))
+    """Return all currently available airport/observation coordinates.
+
+    Data sources:
+    - Airports table in SQLite (hub + non-hub)
+    - Dynamic weather cache points (including GRD_* grid points)
+    """
+    db_airports = await db_list_airports()
+    merged: list[dict] = []
+    known_ids: set[str] = set()
+    for item in db_airports:
+        iata = str(item.get("iata_code", "")).upper()
+        if not iata:
+            continue
+        merged.append(
+            {
+                "iata": iata,
+                "name": item.get("name") or iata,
+                "city": item.get("city") or "",
+                "country": item.get("country") or "",
+                "lat": float(item.get("lat")),
+                "lon": float(item.get("lon")),
+                "is_hub": bool(item.get("is_hub", False)),
+                "point_type": "hub" if bool(item.get("is_hub", False)) else "airport",
+            }
+        )
+        known_ids.add(iata)
+
+    weather_cache = await unified_pipeline.get_weather_cache()
+    for point_id, payload in weather_cache.items():
+        if point_id in known_ids:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        lat = payload.get("lat")
+        lon = payload.get("lon")
+        if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+            continue
+
+        if str(point_id).startswith("GRD_"):
+            name = f"网格观测点 {point_id}"
+        else:
+            name = f"扩展观测点 {point_id}"
+
+        merged.append(
+            {
+                "iata": str(point_id),
+                "name": name,
+                "lat": float(lat),
+                "lon": float(lon),
+                "is_hub": False,
+                "point_type": "grid" if str(point_id).startswith("GRD_") else "weather",
+            }
+        )
+        known_ids.add(str(point_id))
+
+    return ApiResponse(data=merged)
 
 
 @router.get("/flights/{flight_id}")

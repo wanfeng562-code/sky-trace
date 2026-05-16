@@ -188,6 +188,16 @@
 								>航班密度热力图</span
 							></label
 						>
+						<label class="layer-toggle"
+							><input type="checkbox" v-model="showHubAirports" /><span
+								>枢纽机场点位</span
+							></label
+						>
+						<label class="layer-toggle"
+							><input type="checkbox" v-model="showGridPoints" /><span
+								>网格观测点（GRD）</span
+							></label
+						>
 					</div>
 					<div class="panel-section">
 						<div class="panel-title">标注语言</div>
@@ -467,6 +477,8 @@
 	const MAP_AIRPORT_SOURCE_ID = "airports";
 	const MAP_AIRPORT_LAYER_ID = "airport-points";
 	const MAP_AIRPORT_LABEL_LAYER_ID = "airport-labels";
+	const MAP_GRID_LAYER_ID = "grid-observation-points";
+	const MAP_GRID_LABEL_LAYER_ID = "grid-observation-labels";
 	const MAP_AIRPORT_HIGHLIGHT_SOURCE_ID = "airports-highlight";
 	const MAP_AIRPORT_HIGHLIGHT_LAYER_ID = "airport-highlight-points";
 	const MAP_AIRPORT_HIGHLIGHT_LABEL_ID = "airport-highlight-labels";
@@ -518,6 +530,8 @@
 	const showWindLayer = ref(false);
 	const showTempLayer = ref(false);
 	const showDensityLayer = ref(false);
+	const showHubAirports = ref(true);
+	const showGridPoints = ref(false);
 	const aircraftColorPresetId = ref<AircraftColorPresetId>("auto");
 	const currentAircraftColorLabel = computed(() => {
 		return (
@@ -549,6 +563,10 @@
 	/** 飞机颜色更新防抖计时器 */
 	let _aircraftColorUpdateTimer: ReturnType<typeof setTimeout> | null = null;
 
+	/** 底图切换串行队列：避免短时间多次 setStyle 造成并发抖动 */
+	let _styleSwitching = false;
+	let _pendingStyleSwitch: { url: string; styleId: string } | null = null;
+
 	function resolveAircraftIconColors(): { fly: string; ground: string } {
 		const styleColors =
 			STYLE_ICON_COLORS[currentStyleId.value] ?? DEFAULT_ICON_COLORS;
@@ -561,8 +579,32 @@
 		if (!preset) return styleColors;
 		return {
 			fly: preset.fly,
-			ground: preset.ground,
+			// 手动预设下，地面飞机与空中飞机同步换色
+			ground: preset.fly,
 		};
+	}
+
+	async function applyStyleWithQueue(url: string, styleId: string) {
+		if (!map.value) return;
+		if (_styleSwitching) {
+			_pendingStyleSwitch = { url, styleId };
+			return;
+		}
+		_styleSwitching = true;
+		map.value.setStyle(url, { diff: false });
+		map.value.once("style.load", async () => {
+			try {
+				await reinitLayers(map.value!);
+			} finally {
+				_styleSwitching = false;
+				if (_pendingStyleSwitch) {
+					const next = _pendingStyleSwitch;
+					_pendingStyleSwitch = null;
+					currentStyleId.value = next.styleId;
+					void applyStyleWithQueue(next.url, next.styleId);
+				}
+			}
+		});
 	}
 
 	async function refreshAircraftIcons(mapInstance: MapLibreMap) {
@@ -791,14 +833,9 @@
 		} else {
 			url = buildOpenFreeMapStyleUrl(styleId);
 		}
+		if (resolvedStyleId === currentStyleId.value && !_styleSwitching) return;
 		currentStyleId.value = resolvedStyleId;
-		// diff:false forces a full style reload so MapLibre v4 fires 'style.load'.
-		// With the default diff:true, MapLibre only fires 'styledata' and never
-		// fires 'style.load', so reinitLayers would never be called.
-		map.value.setStyle(url, { diff: false });
-		map.value.once("style.load", () => {
-			reinitLayers(map.value!);
-		});
+		void applyStyleWithQueue(url, resolvedStyleId);
 	}
 
 	/**
@@ -829,10 +866,7 @@
 			url = buildOpenFreeMapStyleUrl(sid);
 		}
 		currentStyleId.value = sid;
-		map.value.setStyle(url, { diff: false });
-		map.value.once("style.load", () => {
-			reinitLayers(map.value!);
-		});
+		void applyStyleWithQueue(url, sid);
 	}
 
 	// ── Weather hub fetch (for wind/temp layers) ─────────────────────────────────
@@ -861,6 +895,7 @@
 						};
 					})
 					.filter((h) => h.lat && h.lon);
+				void store.loadAirports(true);
 			}
 		} catch (e) {
 			console.warn("[WeatherHubs] fetch failed", e);
@@ -942,11 +977,20 @@
 	): GeoJSON.FeatureCollection<GeoJSON.Point> {
 		return {
 			type: "FeatureCollection",
-			features: list.map((a) => ({
-				type: "Feature",
-				geometry: { type: "Point", coordinates: [a.lon, a.lat] },
-				properties: { iata: a.iata, name: a.name },
-			})),
+			features: list.map((a) => {
+				const pointType =
+					a.point_type ?? (a.iata?.startsWith("GRD_") ? "grid" : "hub");
+				return {
+					type: "Feature",
+					geometry: { type: "Point", coordinates: [a.lon, a.lat] },
+					properties: {
+						iata: a.iata,
+						name: a.name,
+						point_type: pointType,
+						is_hub: a.is_hub ?? pointType === "hub",
+					},
+				};
+			}),
 		};
 	}
 
@@ -1166,11 +1210,13 @@
 		});
 	}
 
-	/** 将 SVG 文本中的填充色替换为指定颜色（保留 fill="none" 不变） */
+	/** 将 SVG 文本中的填充色/描边色替换为指定颜色（保留 none 不变） */
 	function svgWithColor(svgRaw: string, color: string): string {
 		return svgRaw
 			.replace(/fill="(?!none)[^"]*"/g, `fill="${color}"`)
-			.replace(/fill:(?!\s*none)[^;}"']*/g, `fill:${color}`);
+			.replace(/fill:(?!\s*none)[^;}"']*/g, `fill:${color}`)
+			.replace(/stroke="(?!none)[^"]*"/g, `stroke="${color}"`)
+			.replace(/stroke:(?!\s*none)[^;}"']*/g, `stroke:${color}`);
 	}
 
 	/** 加载自定义图标并注册到地图实例（SVG → Canvas → ImageData，兼容所有浏览器）*/
@@ -1394,6 +1440,8 @@
 				center: [MAP_INIT_LNG, MAP_INIT_LAT],
 				zoom: MAP_INIT_ZOOM,
 				attributionControl: true,
+				localIdeographFontFamily:
+					"Noto Sans CJK SC, Microsoft YaHei, SimHei, sans-serif",
 				refreshExpiredTiles: false,
 				maxTileCacheSize: 2048,
 				maxTileCacheZoomLevels: 8,
@@ -1585,7 +1633,7 @@
 		// Added as a heatmap layer using the same flights geojson source.
 		// We'll add it after MAP_SOURCE_ID is added below.
 
-		// ── Airport layers ────────────────────────────────────────────────────────
+		// ── Airport layers (hub + grid split) ───────────────────────────────────
 		if (!mapInstance.getSource(MAP_AIRPORT_SOURCE_ID)) {
 			mapInstance.addSource(MAP_AIRPORT_SOURCE_ID, {
 				type: "geojson",
@@ -1597,8 +1645,11 @@
 				id: MAP_AIRPORT_LAYER_ID,
 				type: "circle",
 				source: MAP_AIRPORT_SOURCE_ID,
+				filter: ["!=", ["get", "point_type"], "grid"],
+				layout: {
+					visibility: showHubAirports.value ? "visible" : "none",
+				},
 				paint: {
-					// 参考 FR24/FlightAware：白底深边，全色调均清晰可见
 					"circle-radius": [
 						"interpolate",
 						["linear"],
@@ -1622,7 +1673,9 @@
 				id: MAP_AIRPORT_LABEL_LAYER_ID,
 				type: "symbol",
 				source: MAP_AIRPORT_SOURCE_ID,
+				filter: ["!=", ["get", "point_type"], "grid"],
 				layout: {
+					visibility: showHubAirports.value ? "visible" : "none",
 					"text-field": ["get", "iata"],
 					"text-size": 11,
 					"text-anchor": "top",
@@ -1633,6 +1686,56 @@
 					"text-color": "#111827",
 					"text-halo-color": "#ffffff",
 					"text-halo-width": 2,
+				},
+			});
+		}
+		if (!mapInstance.getLayer(MAP_GRID_LAYER_ID)) {
+			mapInstance.addLayer({
+				id: MAP_GRID_LAYER_ID,
+				type: "circle",
+				source: MAP_AIRPORT_SOURCE_ID,
+				filter: ["==", ["get", "point_type"], "grid"],
+				layout: {
+					visibility: showGridPoints.value ? "visible" : "none",
+				},
+				paint: {
+					"circle-radius": [
+						"interpolate",
+						["linear"],
+						["zoom"],
+						3,
+						2,
+						8,
+						3,
+						12,
+						4,
+					],
+					"circle-color": "#22d3ee",
+					"circle-stroke-width": 1,
+					"circle-stroke-color": "#0e7490",
+					"circle-opacity": 0.75,
+					"circle-pitch-alignment": "viewport",
+				},
+			});
+		}
+		if (!mapInstance.getLayer(MAP_GRID_LABEL_LAYER_ID)) {
+			mapInstance.addLayer({
+				id: MAP_GRID_LABEL_LAYER_ID,
+				type: "symbol",
+				source: MAP_AIRPORT_SOURCE_ID,
+				filter: ["==", ["get", "point_type"], "grid"],
+				layout: {
+					visibility: showGridPoints.value ? "visible" : "none",
+					"text-field": ["get", "iata"],
+					"text-size": 9,
+					"text-anchor": "top",
+					"text-offset": [0, 0.6],
+					"text-font": ["Noto Sans Regular"],
+				},
+				paint: {
+					"text-color": "#0e7490",
+					"text-halo-color": "#ecfeff",
+					"text-halo-width": 1.5,
 				},
 			});
 		}
@@ -2109,16 +2212,27 @@
 			mapInstance.getCanvas().style.cursor = "";
 		});
 
-		mapInstance.on("click", MAP_AIRPORT_LAYER_ID, (event) => {
+		const handleAirportPointClick = (event: maplibregl.MapLayerMouseEvent) => {
 			const feature = event.features?.[0];
 			if (!feature) return;
 			const iata = feature.properties?.iata as string | undefined;
-			if (iata) store.scheduleAirport = iata;
-		});
+			if (!iata) return;
+			if (!iata.startsWith("GRD_")) {
+				store.scheduleAirport = iata;
+			}
+		};
+		mapInstance.on("click", MAP_AIRPORT_LAYER_ID, handleAirportPointClick);
+		mapInstance.on("click", MAP_GRID_LAYER_ID, handleAirportPointClick);
 		mapInstance.on("mouseenter", MAP_AIRPORT_LAYER_ID, () => {
 			mapInstance.getCanvas().style.cursor = "pointer";
 		});
 		mapInstance.on("mouseleave", MAP_AIRPORT_LAYER_ID, () => {
+			mapInstance.getCanvas().style.cursor = "";
+		});
+		mapInstance.on("mouseenter", MAP_GRID_LAYER_ID, () => {
+			mapInstance.getCanvas().style.cursor = "pointer";
+		});
+		mapInstance.on("mouseleave", MAP_GRID_LAYER_ID, () => {
 			mapInstance.getCanvas().style.cursor = "";
 		});
 	}
@@ -2270,6 +2384,16 @@
 	// 航班密度热力图
 	watch(showDensityLayer, (show) => {
 		setLayerVisibility(MAP_DENSITY_LAYER_ID, show);
+	});
+
+	// 枢纽机场与网格观测点分层开关
+	watch(showHubAirports, (show) => {
+		setLayerVisibility(MAP_AIRPORT_LAYER_ID, show);
+		setLayerVisibility(MAP_AIRPORT_LABEL_LAYER_ID, show);
+	});
+	watch(showGridPoints, (show) => {
+		setLayerVisibility(MAP_GRID_LAYER_ID, show);
+		setLayerVisibility(MAP_GRID_LABEL_LAYER_ID, show);
 	});
 
 	// AQI 数据更新

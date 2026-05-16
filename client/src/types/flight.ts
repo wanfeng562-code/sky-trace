@@ -87,17 +87,24 @@ export interface FlightQueryParams {
 // 统计摘要
 export interface FlightStats {
 	total: number;
-	airborne: number;
-	on_ground: number;
-	updated_at: string;
+	on_ground_count: number;
+	airborne_count: number;
+	by_source: Record<string, number>;
+	by_altitude_band: Record<string, number>;
+	by_speed_band: Record<string, number>;
+	top_callsign_prefixes: { prefix: string; count: number }[];
 }
 
 // 枢纽机场信息
 export interface AirportInfo {
 	iata: string;
 	name: string;
+	city?: string;
+	country?: string;
 	lat: number;
 	lon: number;
+	is_hub?: boolean;
+	point_type?: "hub" | "airport" | "grid" | "weather";
 }
 
 // 空气质量

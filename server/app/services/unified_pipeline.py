@@ -12,6 +12,7 @@ import aiohttp
 
 from app.core.config import settings
 from app.models.schemas import FlightBrief, WsEvent
+from app.services.db import list_airports as db_list_airports
 from app.services.flight_store import FlightStore
 from app.services.mock_collector import MockCollector
 
@@ -23,58 +24,6 @@ _OPENSKY_TOKEN_URL = (
     "https://auth.opensky-network.org/auth/realms/opensky-network"
     "/protocol/openid-connect/token"
 )
-
-# Static lat/lon for top global aviation hubs used as weather sampling points.
-# Keyed by IATA airport code; overridable via OPENWEATHER_HUBS in .env.
-_HUB_COORDS: dict[str, tuple[float, float]] = {
-    "CAN": (23.3925, 113.2988),   # Guangzhou Baiyun
-    "SZX": (22.6395, 113.8108),   # Shenzhen Bao'an
-    "PEK": (40.0799, 116.5833),   # Beijing Capital
-    "PVG": (31.1434, 121.8052),   # Shanghai Pudong
-    "HKG": (22.3080, 113.9185),   # Hong Kong
-    "NRT": (35.7647, 140.3864),   # Tokyo Narita
-    "ICN": (37.4602, 126.4407),   # Seoul Incheon
-    "SIN": (1.3644,  103.9915),   # Singapore Changi
-    "DXB": (25.2528,  55.3644),   # Dubai
-    "DOH": (25.2609,  51.6138),   # Doha Hamad
-    "LHR": (51.4775,  -0.4614),   # London Heathrow
-    "CDG": (49.0097,   2.5479),   # Paris CDG
-    "FRA": (50.0379,   8.5622),   # Frankfurt
-    "AMS": (52.3086,   4.7639),   # Amsterdam Schiphol
-    "JFK": (40.6413,  -73.7781),  # New York JFK
-    "LAX": (33.9425, -118.4081),  # Los Angeles
-    "ORD": (41.9742,  -87.9073),  # Chicago O'Hare
-    "ATL": (33.6367,  -84.4281),  # Atlanta
-    "SYD": (-33.9399, 151.1753),  # Sydney Kingsford Smith
-    "GRU": (-23.4356,  -46.4731), # São Paulo Guarulhos
-}
-_DEFAULT_HUBS: list[str] = list(_HUB_COORDS.keys())
-
-# Public mapping used by the /airports API endpoint.
-# Each entry: { iata, name, lat, lon }
-HUB_INFO: dict[str, dict] = {
-    "CAN": {"iata": "CAN", "name": "广州白云",        "lat": 23.3925,  "lon": 113.2988},
-    "SZX": {"iata": "SZX", "name": "深圳宝安",        "lat": 22.6395,  "lon": 113.8108},
-    "PEK": {"iata": "PEK", "name": "北京首都",        "lat": 40.0799,  "lon": 116.5833},
-    "PVG": {"iata": "PVG", "name": "上海浦东",        "lat": 31.1434,  "lon": 121.8052},
-    "HKG": {"iata": "HKG", "name": "香港国际",        "lat": 22.3080,  "lon": 113.9185},
-    "NRT": {"iata": "NRT", "name": "东京成田",        "lat": 35.7647,  "lon": 140.3864},
-    "ICN": {"iata": "ICN", "name": "首尔仁川",        "lat": 37.4602,  "lon": 126.4407},
-    "SIN": {"iata": "SIN", "name": "新加坡樟宜",      "lat": 1.3644,   "lon": 103.9915},
-    "DXB": {"iata": "DXB", "name": "迪拜国际",        "lat": 25.2528,  "lon": 55.3644},
-    "DOH": {"iata": "DOH", "name": "多哈哈马德",      "lat": 25.2609,  "lon": 51.6138},
-    "LHR": {"iata": "LHR", "name": "伦敦希思罗",      "lat": 51.4775,  "lon": -0.4614},
-    "CDG": {"iata": "CDG", "name": "巴黎戴高乐",      "lat": 49.0097,  "lon": 2.5479},
-    "FRA": {"iata": "FRA", "name": "法兰克福",        "lat": 50.0379,  "lon": 8.5622},
-    "AMS": {"iata": "AMS", "name": "阿姆斯特丹史基浦","lat": 52.3086,  "lon": 4.7639},
-    "JFK": {"iata": "JFK", "name": "纽约肯尼迪",      "lat": 40.6413,  "lon": -73.7781},
-    "LAX": {"iata": "LAX", "name": "洛杉矶国际",      "lat": 33.9425,  "lon": -118.4081},
-    "ORD": {"iata": "ORD", "name": "芝加哥奥黑尔",    "lat": 41.9742,  "lon": -87.9073},
-    "ATL": {"iata": "ATL", "name": "亚特兰大哈兹菲尔德","lat": 33.6367, "lon": -84.4281},
-    "SYD": {"iata": "SYD", "name": "悉尼金斯福德史密斯","lat": -33.9399,"lon": 151.1753},
-    "GRU": {"iata": "GRU", "name": "圣保罗瓜鲁柳斯",  "lat": -23.4356, "lon": -46.4731},
-}
-
 
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Return great-circle distance in kilometres between two lat/lon points."""
@@ -186,6 +135,12 @@ class UnifiedDataPipeline:
         # Maps our flight_id ("fr24-{icao24}") → FR24 internal flight ID.
         # Used by fetch_fr24_flight_detail() to call get_flight_details().
         self._fr24_id_map: dict[str, str] = {}
+
+        # Environment collector scheduling state (DB-driven airports).
+        self._hub_weather_next_due: dict[str, float] = {}
+        self._hub_weather_interval_min_s = 10 * 60
+        self._hub_weather_interval_max_s = 30 * 60
+        self._hub_weather_max_batch = 40
 
     async def start(self) -> None:
         if self._running:
@@ -378,19 +333,23 @@ class UnifiedDataPipeline:
             )
             return
 
-        # Resolve hub list: config override → built-in default
-        if settings.openweather_hubs:
-            hub_list = [h.strip().upper() for h in settings.openweather_hubs.split(",") if h.strip()]
-        else:
-            hub_list = _DEFAULT_HUBS
-
+        hub_rows = await db_list_airports(is_hub=True)
         hubs: dict[str, tuple[float, float]] = {
-            iata: _HUB_COORDS[iata] for iata in hub_list if iata in _HUB_COORDS
+            str(r["iata_code"]).upper(): (float(r["lat"]), float(r["lon"]))
+            for r in hub_rows
+            if isinstance(r.get("lat"), (int, float))
+            and isinstance(r.get("lon"), (int, float))
+            and str(r.get("iata_code", "")).strip()
         }
         if not hubs:
-            # Absolute fallback: use configured lat/lon as a single unnamed point
-            logger.warning("No valid hub airports resolved; falling back to config lat/lon")
+            logger.warning("No hub airports found in DB; falling back to configured lat/lon")
             hubs = {"_PRIMARY": (settings.openweather_lat, settings.openweather_lon)}
+
+        now_mono = asyncio.get_running_loop().time()
+        due_hubs = [iata for iata in hubs if now_mono >= self._hub_weather_next_due.get(iata, 0.0)]
+        random.shuffle(due_hubs)
+        if len(due_hubs) > self._hub_weather_max_batch:
+            due_hubs = due_hubs[: self._hub_weather_max_batch]
 
         sem = asyncio.Semaphore(5)  # max 5 concurrent requests to OpenWeather
 
@@ -398,6 +357,7 @@ class UnifiedDataPipeline:
             key: str, lat: float, lon: float, *, do_aq: bool = True
         ) -> tuple[str, dict | None, dict | None]:
             async with sem:
+                await asyncio.sleep(random.uniform(0.02, 0.25))
                 try:
                     weather = await self._fetch_openweather_by_coords(lat, lon)
                     weather["iata"] = key
@@ -413,11 +373,12 @@ class UnifiedDataPipeline:
                         logger.warning("Air quality fetch failed for %s: %s", key, exc)
                 return key, weather, aq
 
-        # ── Hub fetch (with retry) ──────────────────────────────────────────
-        results = await asyncio.gather(
-            *[_fetch_point(iata, lat, lon, do_aq=True) for iata, (lat, lon) in hubs.items()],
-            return_exceptions=True,
-        )
+        results: list[Any] = []
+        if due_hubs:
+            results = await asyncio.gather(
+                *[_fetch_point(iata, hubs[iata][0], hubs[iata][1], do_aq=True) for iata in due_hubs],
+                return_exceptions=True,
+            )
 
         # One-shot retry for hubs whose weather fetch returned None (e.g. transient timeout)
         failed_hubs: dict[str, tuple[float, float]] = {
@@ -442,8 +403,10 @@ class UnifiedDataPipeline:
                 if not (isinstance(r, tuple) and r[0] in failed_hubs)
             ] + list(retry_results)
 
-        new_weather: dict[str, dict] = {}
-        new_aq: dict[str, dict] = {}
+        async with self._lock:
+            new_weather: dict[str, dict] = dict(self._weather_cache)
+            new_aq: dict[str, dict] = dict(self._air_quality_cache)
+
         ok_count = 0
         for result in results:
             if isinstance(result, Exception):
@@ -456,6 +419,11 @@ class UnifiedDataPipeline:
             if aq:
                 new_aq[key] = aq
             ok_count += 1
+
+            self._hub_weather_next_due[key] = now_mono + random.uniform(
+                self._hub_weather_interval_min_s,
+                self._hub_weather_interval_max_s,
+            )
 
         # ── Dynamic 5° grid cells based on active flight positions ─────────
         # Build the set of 5° cells already covered by fixed hub airports.
@@ -513,7 +481,13 @@ class UnifiedDataPipeline:
             self._air_quality_cache = new_aq
 
         total_ok = ok_count + (grid_ok if selected_cells else 0)
-        logger.info("environment collected: %d/%d hubs OK, %d total points", ok_count, len(hubs), total_ok)
+        logger.info(
+            "environment collected: %d/%d hubs updated (due=%d), %d total points",
+            ok_count,
+            len(hubs),
+            len(due_hubs),
+            total_ok,
+        )
         await self._record_success("environment", source="openweather", count=total_ok)
 
     async def _collect_commercial(self) -> None:
@@ -1343,11 +1317,26 @@ class UnifiedDataPipeline:
         (with null weather) if none of the hubs have been collected yet.
         No external API call is made.
         """
-        # Sort all hubs by distance from the query point.
+        hub_rows = await db_list_airports(is_hub=True)
         ranked = sorted(
-            _HUB_COORDS.items(),
+            [
+                (
+                    str(r["iata_code"]).upper(),
+                    (float(r["lat"]), float(r["lon"])),
+                )
+                for r in hub_rows
+                if isinstance(r.get("lat"), (int, float))
+                and isinstance(r.get("lon"), (int, float))
+            ],
             key=lambda kv: _haversine(lat, lon, kv[1][0], kv[1][1]),
         )
+        if not ranked:
+            return {
+                "hub_iata": None,
+                "distance_km": None,
+                "weather": None,
+                "air_quality": None,
+            }
 
         async with self._lock:
             weather_snap = dict(self._weather_cache)

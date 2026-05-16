@@ -109,7 +109,7 @@
 		TooltipComponent,
 	} from "echarts/components";
 	import { CanvasRenderer } from "echarts/renderers";
-	import axios from "axios";
+	import { fetchFlightStats } from "../services/api";
 	import { useFlightStore } from "../stores/flight";
 
 	echarts.use([
@@ -121,7 +121,6 @@
 		CanvasRenderer,
 	]);
 
-	const API = import.meta.env.VITE_API_BASE_URL as string;
 	const store = useFlightStore();
 
 	interface StatsData {
@@ -154,7 +153,8 @@
 	let altChart: echarts.ECharts | null = null;
 	let spdChart: echarts.ECharts | null = null;
 	let prefixChart: echarts.ECharts | null = null;
-	let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+	let refreshTimer: ReturnType<typeof setInterval> | null = null;
+	let statsLoading = false;
 
 	const ALT_LABELS: Record<string, string> = {
 		ground: "地面 ≤100ft",
@@ -183,15 +183,18 @@
 	}
 
 	async function loadStats() {
+		if (statsLoading) return;
+		statsLoading = true;
 		try {
-			const res = await axios.get(`${API}/flights/summary/stats`);
-			stats.value = res.data.data;
+			stats.value = await fetchFlightStats();
 			loading.value = false;
 			// nextTick ensures v-else chart containers are in the DOM before echarts.init
 			await nextTick();
 			renderCharts();
 		} catch {
 			// keep loading state, retry on next interval
+		} finally {
+			statsLoading = false;
 		}
 	}
 

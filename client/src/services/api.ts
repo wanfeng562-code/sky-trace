@@ -175,9 +175,9 @@ export async function fetchFlightStats(): Promise<FlightStats> {
 	});
 }
 
-export async function fetchAirports(): Promise<AirportInfo[]> {
+export async function fetchAirports(force = false): Promise<AirportInfo[]> {
 	return getWithPolicy<AirportInfo[]>("/airports", undefined, {
-		ttlMs: 30 * 60 * 1000,
+		ttlMs: force ? 0 : 30 * 60 * 1000,
 		retries: 1,
 		timeoutMs: 15000,
 	});

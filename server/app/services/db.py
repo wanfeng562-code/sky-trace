@@ -14,6 +14,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 import aiosqlite
 
@@ -69,7 +70,23 @@ CREATE TABLE IF NOT EXISTS flight_details_extra (
     arr_time          TEXT,
     updated_at        TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS airports (
+    iata_code TEXT PRIMARY KEY,
+    name      TEXT NOT NULL,
+    city      TEXT,
+    country   TEXT,
+    lat       REAL NOT NULL,
+    lon       REAL NOT NULL,
+    is_hub    INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE INDEX IF NOT EXISTS idx_airports_is_hub ON airports (is_hub);
+CREATE INDEX IF NOT EXISTS idx_airports_lat_lon ON airports (lat, lon);
 """
+
+_SERVER_ROOT = Path(__file__).resolve().parent.parent.parent
+_AIRPORTS_SEED_PATH = _SERVER_ROOT / "data" / "airports.seed.json"
 
 
 async def init_db() -> None:
@@ -85,13 +102,70 @@ async def init_db() -> None:
         "ALTER TABLE flight_details_extra ADD COLUMN airline_iata TEXT",
         "ALTER TABLE flight_details_extra ADD COLUMN dep_time TEXT",
         "ALTER TABLE flight_details_extra ADD COLUMN arr_time TEXT",
+        "ALTER TABLE airports ADD COLUMN city TEXT",
+        "ALTER TABLE airports ADD COLUMN country TEXT",
+        "ALTER TABLE airports ADD COLUMN is_hub INTEGER NOT NULL DEFAULT 1",
     ]:
         try:
             await _db.execute(alter)
         except Exception:
             pass  # Column already exists
+    await _seed_airports_if_empty()
     await _db.commit()
     logger.info("SQLite initialised at %s", path.resolve())
+
+
+async def _seed_airports_if_empty() -> None:
+    """Load airports from local seed JSON when the airports table is empty."""
+    db = get_db()
+    async with db.execute("SELECT COUNT(*) AS cnt FROM airports") as cursor:
+        row = await cursor.fetchone()
+    if row and int(row["cnt"]) > 0:
+        return
+
+    if not _AIRPORTS_SEED_PATH.exists():
+        logger.warning("Airports seed file not found: %s", _AIRPORTS_SEED_PATH)
+        return
+
+    try:
+        raw = json.loads(_AIRPORTS_SEED_PATH.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.warning("Failed to read airports seed: %s", exc)
+        return
+
+    if not isinstance(raw, list):
+        logger.warning("Airports seed should be a list: %s", _AIRPORTS_SEED_PATH)
+        return
+
+    rows: list[tuple[str, str, str, str, float, float, int]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        iata = str(item.get("iata_code", "")).strip().upper()
+        name = str(item.get("name", "")).strip()
+        city = str(item.get("city", "")).strip()
+        country = str(item.get("country", "")).strip()
+        lat = item.get("lat")
+        lon = item.get("lon")
+        is_hub = 1 if bool(item.get("is_hub", True)) else 0
+        if len(iata) != 3 or not name:
+            continue
+        if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+            continue
+        rows.append((iata, name, city, country, float(lat), float(lon), is_hub))
+
+    if not rows:
+        logger.warning("No valid airport rows found in seed: %s", _AIRPORTS_SEED_PATH)
+        return
+
+    await db.executemany(
+        """
+        INSERT INTO airports (iata_code, name, city, country, lat, lon, is_hub)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+    logger.info("Seeded airports table with %d records", len(rows))
 
 
 async def close_db() -> None:
@@ -181,3 +255,32 @@ async def query_playback_frames(
         t += timedelta(seconds=interval_s)
 
     return frames
+
+
+async def list_airports(*, is_hub: bool | None = None) -> list[dict[str, Any]]:
+    """Return airports from SQLite as dictionaries."""
+    db = get_db()
+    sql = "SELECT iata_code, name, city, country, lat, lon, is_hub FROM airports"
+    params: tuple[Any, ...] = ()
+    if is_hub is not None:
+        sql += " WHERE is_hub = ?"
+        params = (1 if is_hub else 0,)
+    sql += " ORDER BY iata_code"
+
+    async with db.execute(sql, params) as cursor:
+        rows = await cursor.fetchall()
+
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        out.append(
+            {
+                "iata_code": row["iata_code"],
+                "name": row["name"],
+                "city": row["city"],
+                "country": row["country"],
+                "lat": row["lat"],
+                "lon": row["lon"],
+                "is_hub": bool(row["is_hub"]),
+            }
+        )
+    return out

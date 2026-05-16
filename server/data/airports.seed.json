@@ -1,0 +1,884 @@
+[
+	{
+		"iata_code": "ATL",
+		"name": "Hartsfield-Jackson Atlanta International Airport",
+		"city": "Atlanta",
+		"country": "US",
+		"lat": 33.6367,
+		"lon": -84.4281,
+		"is_hub": true
+	},
+	{
+		"iata_code": "PEK",
+		"name": "Beijing Capital International Airport",
+		"city": "Beijing",
+		"country": "CN",
+		"lat": 40.0799,
+		"lon": 116.6031,
+		"is_hub": true
+	},
+	{
+		"iata_code": "PKX",
+		"name": "Beijing Daxing International Airport",
+		"city": "Beijing",
+		"country": "CN",
+		"lat": 39.5098,
+		"lon": 116.4105,
+		"is_hub": true
+	},
+	{
+		"iata_code": "LAX",
+		"name": "Los Angeles International Airport",
+		"city": "Los Angeles",
+		"country": "US",
+		"lat": 33.9425,
+		"lon": -118.4081,
+		"is_hub": true
+	},
+	{
+		"iata_code": "DXB",
+		"name": "Dubai International Airport",
+		"city": "Dubai",
+		"country": "AE",
+		"lat": 25.2532,
+		"lon": 55.3657,
+		"is_hub": true
+	},
+	{
+		"iata_code": "HND",
+		"name": "Tokyo Haneda Airport",
+		"city": "Tokyo",
+		"country": "JP",
+		"lat": 35.5494,
+		"lon": 139.7798,
+		"is_hub": true
+	},
+	{
+		"iata_code": "NRT",
+		"name": "Narita International Airport",
+		"city": "Tokyo",
+		"country": "JP",
+		"lat": 35.7647,
+		"lon": 140.3864,
+		"is_hub": true
+	},
+	{
+		"iata_code": "LHR",
+		"name": "London Heathrow Airport",
+		"city": "London",
+		"country": "GB",
+		"lat": 51.47,
+		"lon": -0.4543,
+		"is_hub": true
+	},
+	{
+		"iata_code": "CDG",
+		"name": "Paris Charles de Gaulle Airport",
+		"city": "Paris",
+		"country": "FR",
+		"lat": 49.0097,
+		"lon": 2.5479,
+		"is_hub": true
+	},
+	{
+		"iata_code": "AMS",
+		"name": "Amsterdam Airport Schiphol",
+		"city": "Amsterdam",
+		"country": "NL",
+		"lat": 52.3105,
+		"lon": 4.7683,
+		"is_hub": true
+	},
+	{
+		"iata_code": "FRA",
+		"name": "Frankfurt Airport",
+		"city": "Frankfurt",
+		"country": "DE",
+		"lat": 50.0379,
+		"lon": 8.5622,
+		"is_hub": true
+	},
+	{
+		"iata_code": "IST",
+		"name": "Istanbul Airport",
+		"city": "Istanbul",
+		"country": "TR",
+		"lat": 41.2753,
+		"lon": 28.7519,
+		"is_hub": true
+	},
+	{
+		"iata_code": "MAD",
+		"name": "Adolfo Suarez Madrid-Barajas Airport",
+		"city": "Madrid",
+		"country": "ES",
+		"lat": 40.4983,
+		"lon": -3.5676,
+		"is_hub": true
+	},
+	{
+		"iata_code": "BCN",
+		"name": "Barcelona El Prat Airport",
+		"city": "Barcelona",
+		"country": "ES",
+		"lat": 41.2974,
+		"lon": 2.0833,
+		"is_hub": true
+	},
+	{
+		"iata_code": "FCO",
+		"name": "Leonardo da Vinci Rome Fiumicino Airport",
+		"city": "Rome",
+		"country": "IT",
+		"lat": 41.8003,
+		"lon": 12.2389,
+		"is_hub": true
+	},
+	{
+		"iata_code": "MUC",
+		"name": "Munich Airport",
+		"city": "Munich",
+		"country": "DE",
+		"lat": 48.3538,
+		"lon": 11.7861,
+		"is_hub": true
+	},
+	{
+		"iata_code": "ZRH",
+		"name": "Zurich Airport",
+		"city": "Zurich",
+		"country": "CH",
+		"lat": 47.4581,
+		"lon": 8.5555,
+		"is_hub": true
+	},
+	{
+		"iata_code": "VIE",
+		"name": "Vienna International Airport",
+		"city": "Vienna",
+		"country": "AT",
+		"lat": 48.1103,
+		"lon": 16.5697,
+		"is_hub": true
+	},
+	{
+		"iata_code": "BRU",
+		"name": "Brussels Airport",
+		"city": "Brussels",
+		"country": "BE",
+		"lat": 50.9014,
+		"lon": 4.4844,
+		"is_hub": true
+	},
+	{
+		"iata_code": "CPH",
+		"name": "Copenhagen Airport",
+		"city": "Copenhagen",
+		"country": "DK",
+		"lat": 55.6181,
+		"lon": 12.656,
+		"is_hub": true
+	},
+	{
+		"iata_code": "ARN",
+		"name": "Stockholm Arlanda Airport",
+		"city": "Stockholm",
+		"country": "SE",
+		"lat": 59.6519,
+		"lon": 17.9186,
+		"is_hub": true
+	},
+	{
+		"iata_code": "OSL",
+		"name": "Oslo Gardermoen Airport",
+		"city": "Oslo",
+		"country": "NO",
+		"lat": 60.1939,
+		"lon": 11.1004,
+		"is_hub": true
+	},
+	{
+		"iata_code": "HEL",
+		"name": "Helsinki Airport",
+		"city": "Helsinki",
+		"country": "FI",
+		"lat": 60.3172,
+		"lon": 24.9633,
+		"is_hub": true
+	},
+	{
+		"iata_code": "DUB",
+		"name": "Dublin Airport",
+		"city": "Dublin",
+		"country": "IE",
+		"lat": 53.4213,
+		"lon": -6.2701,
+		"is_hub": true
+	},
+	{
+		"iata_code": "LIS",
+		"name": "Lisbon Humberto Delgado Airport",
+		"city": "Lisbon",
+		"country": "PT",
+		"lat": 38.7742,
+		"lon": -9.1342,
+		"is_hub": true
+	},
+	{
+		"iata_code": "WAW",
+		"name": "Warsaw Chopin Airport",
+		"city": "Warsaw",
+		"country": "PL",
+		"lat": 52.1657,
+		"lon": 20.9671,
+		"is_hub": true
+	},
+	{
+		"iata_code": "PRG",
+		"name": "Vaclav Havel Airport Prague",
+		"city": "Prague",
+		"country": "CZ",
+		"lat": 50.1008,
+		"lon": 14.26,
+		"is_hub": true
+	},
+	{
+		"iata_code": "BUD",
+		"name": "Budapest Ferenc Liszt International Airport",
+		"city": "Budapest",
+		"country": "HU",
+		"lat": 47.4399,
+		"lon": 19.2611,
+		"is_hub": true
+	},
+	{
+		"iata_code": "JFK",
+		"name": "John F. Kennedy International Airport",
+		"city": "New York",
+		"country": "US",
+		"lat": 40.6413,
+		"lon": -73.7781,
+		"is_hub": true
+	},
+	{
+		"iata_code": "EWR",
+		"name": "Newark Liberty International Airport",
+		"city": "Newark",
+		"country": "US",
+		"lat": 40.6895,
+		"lon": -74.1745,
+		"is_hub": true
+	},
+	{
+		"iata_code": "ORD",
+		"name": "Chicago O Hare International Airport",
+		"city": "Chicago",
+		"country": "US",
+		"lat": 41.9742,
+		"lon": -87.9073,
+		"is_hub": true
+	},
+	{
+		"iata_code": "DFW",
+		"name": "Dallas Fort Worth International Airport",
+		"city": "Dallas",
+		"country": "US",
+		"lat": 32.8998,
+		"lon": -97.0403,
+		"is_hub": true
+	},
+	{
+		"iata_code": "DEN",
+		"name": "Denver International Airport",
+		"city": "Denver",
+		"country": "US",
+		"lat": 39.8561,
+		"lon": -104.6737,
+		"is_hub": true
+	},
+	{
+		"iata_code": "SFO",
+		"name": "San Francisco International Airport",
+		"city": "San Francisco",
+		"country": "US",
+		"lat": 37.6213,
+		"lon": -122.379,
+		"is_hub": true
+	},
+	{
+		"iata_code": "SEA",
+		"name": "Seattle Tacoma International Airport",
+		"city": "Seattle",
+		"country": "US",
+		"lat": 47.4502,
+		"lon": -122.3088,
+		"is_hub": true
+	},
+	{
+		"iata_code": "LAS",
+		"name": "Harry Reid International Airport",
+		"city": "Las Vegas",
+		"country": "US",
+		"lat": 36.084,
+		"lon": -115.1537,
+		"is_hub": true
+	},
+	{
+		"iata_code": "MIA",
+		"name": "Miami International Airport",
+		"city": "Miami",
+		"country": "US",
+		"lat": 25.7959,
+		"lon": -80.287,
+		"is_hub": true
+	},
+	{
+		"iata_code": "BOS",
+		"name": "Logan International Airport",
+		"city": "Boston",
+		"country": "US",
+		"lat": 42.3656,
+		"lon": -71.0096,
+		"is_hub": true
+	},
+	{
+		"iata_code": "IAD",
+		"name": "Washington Dulles International Airport",
+		"city": "Washington",
+		"country": "US",
+		"lat": 38.9531,
+		"lon": -77.4565,
+		"is_hub": true
+	},
+	{
+		"iata_code": "YYZ",
+		"name": "Toronto Pearson International Airport",
+		"city": "Toronto",
+		"country": "CA",
+		"lat": 43.6777,
+		"lon": -79.6248,
+		"is_hub": true
+	},
+	{
+		"iata_code": "YVR",
+		"name": "Vancouver International Airport",
+		"city": "Vancouver",
+		"country": "CA",
+		"lat": 49.1967,
+		"lon": -123.1815,
+		"is_hub": true
+	},
+	{
+		"iata_code": "YUL",
+		"name": "Montreal Trudeau International Airport",
+		"city": "Montreal",
+		"country": "CA",
+		"lat": 45.4706,
+		"lon": -73.7408,
+		"is_hub": true
+	},
+	{
+		"iata_code": "MEX",
+		"name": "Mexico City International Airport",
+		"city": "Mexico City",
+		"country": "MX",
+		"lat": 19.4363,
+		"lon": -99.0721,
+		"is_hub": true
+	},
+	{
+		"iata_code": "GRU",
+		"name": "Sao Paulo Guarulhos International Airport",
+		"city": "Sao Paulo",
+		"country": "BR",
+		"lat": -23.4356,
+		"lon": -46.4731,
+		"is_hub": true
+	},
+	{
+		"iata_code": "GIG",
+		"name": "Rio de Janeiro Galeao International Airport",
+		"city": "Rio de Janeiro",
+		"country": "BR",
+		"lat": -22.8099,
+		"lon": -43.2506,
+		"is_hub": true
+	},
+	{
+		"iata_code": "EZE",
+		"name": "Ministro Pistarini International Airport",
+		"city": "Buenos Aires",
+		"country": "AR",
+		"lat": -34.8222,
+		"lon": -58.5358,
+		"is_hub": true
+	},
+	{
+		"iata_code": "SCL",
+		"name": "Arturo Merino Benitez International Airport",
+		"city": "Santiago",
+		"country": "CL",
+		"lat": -33.3929,
+		"lon": -70.7858,
+		"is_hub": true
+	},
+	{
+		"iata_code": "LIM",
+		"name": "Jorge Chavez International Airport",
+		"city": "Lima",
+		"country": "PE",
+		"lat": -12.0219,
+		"lon": -77.1143,
+		"is_hub": true
+	},
+	{
+		"iata_code": "BOG",
+		"name": "El Dorado International Airport",
+		"city": "Bogota",
+		"country": "CO",
+		"lat": 4.7016,
+		"lon": -74.1469,
+		"is_hub": true
+	},
+	{
+		"iata_code": "PTY",
+		"name": "Tocumen International Airport",
+		"city": "Panama City",
+		"country": "PA",
+		"lat": 9.0714,
+		"lon": -79.3835,
+		"is_hub": true
+	},
+	{
+		"iata_code": "CUN",
+		"name": "Cancun International Airport",
+		"city": "Cancun",
+		"country": "MX",
+		"lat": 21.0365,
+		"lon": -86.8771,
+		"is_hub": true
+	},
+	{
+		"iata_code": "CAI",
+		"name": "Cairo International Airport",
+		"city": "Cairo",
+		"country": "EG",
+		"lat": 30.1219,
+		"lon": 31.4056,
+		"is_hub": true
+	},
+	{
+		"iata_code": "JNB",
+		"name": "O R Tambo International Airport",
+		"city": "Johannesburg",
+		"country": "ZA",
+		"lat": -26.1367,
+		"lon": 28.241,
+		"is_hub": true
+	},
+	{
+		"iata_code": "CPT",
+		"name": "Cape Town International Airport",
+		"city": "Cape Town",
+		"country": "ZA",
+		"lat": -33.9696,
+		"lon": 18.5972,
+		"is_hub": true
+	},
+	{
+		"iata_code": "NBO",
+		"name": "Jomo Kenyatta International Airport",
+		"city": "Nairobi",
+		"country": "KE",
+		"lat": -1.3192,
+		"lon": 36.9278,
+		"is_hub": true
+	},
+	{
+		"iata_code": "ADD",
+		"name": "Addis Ababa Bole International Airport",
+		"city": "Addis Ababa",
+		"country": "ET",
+		"lat": 8.9779,
+		"lon": 38.7993,
+		"is_hub": true
+	},
+	{
+		"iata_code": "LOS",
+		"name": "Murtala Muhammed International Airport",
+		"city": "Lagos",
+		"country": "NG",
+		"lat": 6.5774,
+		"lon": 3.3212,
+		"is_hub": true
+	},
+	{
+		"iata_code": "CMN",
+		"name": "Mohammed V International Airport",
+		"city": "Casablanca",
+		"country": "MA",
+		"lat": 33.3675,
+		"lon": -7.5899,
+		"is_hub": true
+	},
+	{
+		"iata_code": "DOH",
+		"name": "Hamad International Airport",
+		"city": "Doha",
+		"country": "QA",
+		"lat": 25.2731,
+		"lon": 51.6081,
+		"is_hub": true
+	},
+	{
+		"iata_code": "AUH",
+		"name": "Abu Dhabi International Airport",
+		"city": "Abu Dhabi",
+		"country": "AE",
+		"lat": 24.433,
+		"lon": 54.6511,
+		"is_hub": true
+	},
+	{
+		"iata_code": "RUH",
+		"name": "King Khalid International Airport",
+		"city": "Riyadh",
+		"country": "SA",
+		"lat": 24.9576,
+		"lon": 46.6988,
+		"is_hub": true
+	},
+	{
+		"iata_code": "JED",
+		"name": "King Abdulaziz International Airport",
+		"city": "Jeddah",
+		"country": "SA",
+		"lat": 21.6702,
+		"lon": 39.1525,
+		"is_hub": true
+	},
+	{
+		"iata_code": "BOM",
+		"name": "Chhatrapati Shivaji Maharaj International Airport",
+		"city": "Mumbai",
+		"country": "IN",
+		"lat": 19.0896,
+		"lon": 72.8656,
+		"is_hub": true
+	},
+	{
+		"iata_code": "DEL",
+		"name": "Indira Gandhi International Airport",
+		"city": "Delhi",
+		"country": "IN",
+		"lat": 28.5562,
+		"lon": 77.1,
+		"is_hub": true
+	},
+	{
+		"iata_code": "BLR",
+		"name": "Kempegowda International Airport",
+		"city": "Bengaluru",
+		"country": "IN",
+		"lat": 13.1986,
+		"lon": 77.7066,
+		"is_hub": true
+	},
+	{
+		"iata_code": "HYD",
+		"name": "Rajiv Gandhi International Airport",
+		"city": "Hyderabad",
+		"country": "IN",
+		"lat": 17.2403,
+		"lon": 78.4294,
+		"is_hub": true
+	},
+	{
+		"iata_code": "MAA",
+		"name": "Chennai International Airport",
+		"city": "Chennai",
+		"country": "IN",
+		"lat": 12.9941,
+		"lon": 80.1709,
+		"is_hub": true
+	},
+	{
+		"iata_code": "CCU",
+		"name": "Netaji Subhas Chandra Bose International Airport",
+		"city": "Kolkata",
+		"country": "IN",
+		"lat": 22.6547,
+		"lon": 88.4467,
+		"is_hub": true
+	},
+	{
+		"iata_code": "BKK",
+		"name": "Suvarnabhumi Airport",
+		"city": "Bangkok",
+		"country": "TH",
+		"lat": 13.69,
+		"lon": 100.7501,
+		"is_hub": true
+	},
+	{
+		"iata_code": "DMK",
+		"name": "Don Mueang International Airport",
+		"city": "Bangkok",
+		"country": "TH",
+		"lat": 13.9126,
+		"lon": 100.607,
+		"is_hub": true
+	},
+	{
+		"iata_code": "SIN",
+		"name": "Singapore Changi Airport",
+		"city": "Singapore",
+		"country": "SG",
+		"lat": 1.3644,
+		"lon": 103.9915,
+		"is_hub": true
+	},
+	{
+		"iata_code": "KUL",
+		"name": "Kuala Lumpur International Airport",
+		"city": "Kuala Lumpur",
+		"country": "MY",
+		"lat": 2.7456,
+		"lon": 101.7072,
+		"is_hub": true
+	},
+	{
+		"iata_code": "CGK",
+		"name": "Soekarno Hatta International Airport",
+		"city": "Jakarta",
+		"country": "ID",
+		"lat": -6.1256,
+		"lon": 106.6559,
+		"is_hub": true
+	},
+	{
+		"iata_code": "MNL",
+		"name": "Ninoy Aquino International Airport",
+		"city": "Manila",
+		"country": "PH",
+		"lat": 14.5086,
+		"lon": 121.0198,
+		"is_hub": true
+	},
+	{
+		"iata_code": "HAN",
+		"name": "Noi Bai International Airport",
+		"city": "Hanoi",
+		"country": "VN",
+		"lat": 21.2187,
+		"lon": 105.8042,
+		"is_hub": true
+	},
+	{
+		"iata_code": "SGN",
+		"name": "Tan Son Nhat International Airport",
+		"city": "Ho Chi Minh City",
+		"country": "VN",
+		"lat": 10.8188,
+		"lon": 106.6519,
+		"is_hub": true
+	},
+	{
+		"iata_code": "ICN",
+		"name": "Incheon International Airport",
+		"city": "Seoul",
+		"country": "KR",
+		"lat": 37.4602,
+		"lon": 126.4407,
+		"is_hub": true
+	},
+	{
+		"iata_code": "GMP",
+		"name": "Gimpo International Airport",
+		"city": "Seoul",
+		"country": "KR",
+		"lat": 37.5583,
+		"lon": 126.7906,
+		"is_hub": true
+	},
+	{
+		"iata_code": "TPE",
+		"name": "Taiwan Taoyuan International Airport",
+		"city": "Taipei",
+		"country": "TW",
+		"lat": 25.0797,
+		"lon": 121.2342,
+		"is_hub": true
+	},
+	{
+		"iata_code": "HKG",
+		"name": "Hong Kong International Airport",
+		"city": "Hong Kong",
+		"country": "CN",
+		"lat": 22.308,
+		"lon": 113.9185,
+		"is_hub": true
+	},
+	{
+		"iata_code": "CAN",
+		"name": "Guangzhou Baiyun International Airport",
+		"city": "Guangzhou",
+		"country": "CN",
+		"lat": 23.3925,
+		"lon": 113.2988,
+		"is_hub": true
+	},
+	{
+		"iata_code": "SZX",
+		"name": "Shenzhen Baoan International Airport",
+		"city": "Shenzhen",
+		"country": "CN",
+		"lat": 22.6395,
+		"lon": 113.8108,
+		"is_hub": true
+	},
+	{
+		"iata_code": "PVG",
+		"name": "Shanghai Pudong International Airport",
+		"city": "Shanghai",
+		"country": "CN",
+		"lat": 31.1434,
+		"lon": 121.8052,
+		"is_hub": true
+	},
+	{
+		"iata_code": "SHA",
+		"name": "Shanghai Hongqiao International Airport",
+		"city": "Shanghai",
+		"country": "CN",
+		"lat": 31.1979,
+		"lon": 121.3363,
+		"is_hub": true
+	},
+	{
+		"iata_code": "CTU",
+		"name": "Chengdu Shuangliu International Airport",
+		"city": "Chengdu",
+		"country": "CN",
+		"lat": 30.5785,
+		"lon": 103.9471,
+		"is_hub": true
+	},
+	{
+		"iata_code": "TFU",
+		"name": "Chengdu Tianfu International Airport",
+		"city": "Chengdu",
+		"country": "CN",
+		"lat": 30.319,
+		"lon": 104.445,
+		"is_hub": true
+	},
+	{
+		"iata_code": "XIY",
+		"name": "Xi an Xianyang International Airport",
+		"city": "Xian",
+		"country": "CN",
+		"lat": 34.4471,
+		"lon": 108.7516,
+		"is_hub": true
+	},
+	{
+		"iata_code": "HGH",
+		"name": "Hangzhou Xiaoshan International Airport",
+		"city": "Hangzhou",
+		"country": "CN",
+		"lat": 30.2361,
+		"lon": 120.433,
+		"is_hub": true
+	},
+	{
+		"iata_code": "NKG",
+		"name": "Nanjing Lukou International Airport",
+		"city": "Nanjing",
+		"country": "CN",
+		"lat": 31.742,
+		"lon": 118.862,
+		"is_hub": true
+	},
+	{
+		"iata_code": "WUH",
+		"name": "Wuhan Tianhe International Airport",
+		"city": "Wuhan",
+		"country": "CN",
+		"lat": 30.7838,
+		"lon": 114.2081,
+		"is_hub": true
+	},
+	{
+		"iata_code": "CSX",
+		"name": "Changsha Huanghua International Airport",
+		"city": "Changsha",
+		"country": "CN",
+		"lat": 28.1892,
+		"lon": 113.2206,
+		"is_hub": true
+	},
+	{
+		"iata_code": "KMG",
+		"name": "Kunming Changshui International Airport",
+		"city": "Kunming",
+		"country": "CN",
+		"lat": 25.1019,
+		"lon": 102.9292,
+		"is_hub": true
+	},
+	{
+		"iata_code": "SYD",
+		"name": "Sydney Kingsford Smith Airport",
+		"city": "Sydney",
+		"country": "AU",
+		"lat": -33.9399,
+		"lon": 151.1753,
+		"is_hub": true
+	},
+	{
+		"iata_code": "MEL",
+		"name": "Melbourne Airport",
+		"city": "Melbourne",
+		"country": "AU",
+		"lat": -37.669,
+		"lon": 144.841,
+		"is_hub": true
+	},
+	{
+		"iata_code": "BNE",
+		"name": "Brisbane Airport",
+		"city": "Brisbane",
+		"country": "AU",
+		"lat": -27.3842,
+		"lon": 153.1175,
+		"is_hub": true
+	},
+	{
+		"iata_code": "PER",
+		"name": "Perth Airport",
+		"city": "Perth",
+		"country": "AU",
+		"lat": -31.9403,
+		"lon": 115.9672,
+		"is_hub": true
+	},
+	{
+		"iata_code": "AKL",
+		"name": "Auckland Airport",
+		"city": "Auckland",
+		"country": "NZ",
+		"lat": -37.0082,
+		"lon": 174.785,
+		"is_hub": true
+	},
+	{
+		"iata_code": "CHC",
+		"name": "Christchurch Airport",
+		"city": "Christchurch",
+		"country": "NZ",
+		"lat": -43.4894,
+		"lon": 172.5322,
+		"is_hub": true
+	}
+]
