@@ -11,6 +11,7 @@ from app.api.routes.flights import router as flights_router
 from app.api.routes.health import router as health_router
 from app.api.routes.insights import router as insights_router
 from app.api.routes.map_proxy import router as map_proxy_router
+from app.api.routes.places import router as places_router
 from app.api.routes.playback import router as playback_router
 from app.api.ws.flights_ws import router as ws_router
 from app.core.config import settings
@@ -56,6 +57,7 @@ app.include_router(map_proxy_router)
 app.include_router(flights_router)
 app.include_router(data_hub_router)
 app.include_router(playback_router)
+app.include_router(places_router)
 app.include_router(ws_router)
 
 app.add_middleware(

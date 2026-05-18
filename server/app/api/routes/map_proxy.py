@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/tiles", tags=["map-proxy"])
 
 # Per-provider request counters (process-lifetime, reset on server restart).
-_proxy_stats: dict[str, int] = {"maptiler": 0, "stadia": 0}
+_proxy_stats: dict[str, int] = {"maptiler": 0, "stadia": 0, "openfreemap": 0}
 
 # Runtime metrics for cache/retry/serve-stale behaviors.
 _proxy_runtime_stats: dict[str, int] = {
@@ -106,9 +106,12 @@ def _cacheable_path(path: str) -> bool:
     lower = path.lower()
     return (
         "style.json" in lower
+        or "/styles/" in lower
         or "/fonts/" in lower
         or "/glyphs/" in lower
         or "/sprites/" in lower
+        or lower.endswith("/planet")
+        or "/planet" in lower
     )
 
 
@@ -342,6 +345,13 @@ async def proxy_stadia(path: str, request: Request) -> Response:
     """Proxy Stadia Maps tile / style requests via the configured HTTP proxy."""
     _proxy_stats["stadia"] += 1
     return await _proxy_request("https://tiles.stadiamaps.com", path, request)
+
+
+@router.get("/openfreemap/{path:path}", summary="OpenFreeMap tile proxy")
+async def proxy_openfreemap(path: str, request: Request) -> Response:
+    """Proxy OpenFreeMap style / vector / font / sprite requests."""
+    _proxy_stats["openfreemap"] += 1
+    return await _proxy_request("https://tiles.openfreemap.org", path, request)
 
 
 @router.get("/stats", summary="Tile proxy request stats")

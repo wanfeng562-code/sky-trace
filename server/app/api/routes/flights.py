@@ -3,10 +3,27 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
 
 from app.models.schemas import ApiResponse
-from app.services.db import list_airports as db_list_airports
+from app.services.airport_display import airport_name_zh
+from app.services.db import (
+    get_airport_by_iata,
+    get_airports_by_iata,
+    list_airports as db_list_airports,
+)
+from app.services.unified_pipeline import grd_cell_bounds, parse_grd_cell_id
 from app.state import flight_store, unified_pipeline
 
 router = APIRouter(prefix="/api/v1", tags=["flights"])
+
+
+def _flatten_last_position(data: dict) -> dict:
+    """Expose lat/lon/telemetry at top level for clients that read flat fields."""
+    pos = data.get("last_position")
+    if not isinstance(pos, dict):
+        return data
+    for key in ("lat", "lon", "heading", "speed_kts", "altitude_ft", "updated_at"):
+        if data.get(key) is None and pos.get(key) is not None:
+            data[key] = pos[key]
+    return data
 
 
 def _to_weather_info(hub_payload: dict | None) -> dict | None:
@@ -108,7 +125,7 @@ def _to_weather_info(hub_payload: dict | None) -> dict | None:
 @router.get("/flights")
 async def list_flights(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=100, ge=1, le=500),
+    page_size: int = Query(default=2000, ge=1, le=5000),
     callsign: str | None = Query(default=None, description="Partial callsign filter (case-insensitive)"),
     lat_min: float | None = Query(default=None),
     lat_max: float | None = Query(default=None),
@@ -236,15 +253,59 @@ async def get_flight_stats() -> ApiResponse:
     )
 
 
+@router.get("/airports/lookup", summary="Look up airport metadata by IATA codes")
+async def lookup_airports(
+    codes: str = Query(..., description="Comma-separated IATA codes, e.g. HOU,MCO"),
+) -> ApiResponse:
+    """Return name/city/coords and Chinese display label for each known IATA."""
+    parsed_codes: list[str] = []
+    for raw in codes.split(","):
+        code = raw.strip().upper()
+        if len(code) == 3 and code not in parsed_codes:
+            parsed_codes.append(code)
+
+    rows = await get_airports_by_iata(parsed_codes)
+    by_iata = {str(r["iata_code"]).upper(): r for r in rows}
+
+    out: list[dict] = []
+    for code in parsed_codes:
+        ap = by_iata.get(code)
+        if not ap:
+            out.append({"iata": code, "name_zh": airport_name_zh(code)})
+            continue
+        out.append(
+            {
+                "iata": code,
+                "name": ap.get("name"),
+                "city": ap.get("city"),
+                "country": ap.get("country"),
+                "lat": ap.get("lat"),
+                "lon": ap.get("lon"),
+                "name_zh": airport_name_zh(
+                    code,
+                    name=str(ap.get("name") or ""),
+                    city=str(ap.get("city") or ""),
+                    country=str(ap.get("country") or ""),
+                ),
+            }
+        )
+    return ApiResponse(data=out)
+
+
 @router.get("/airports", summary="List monitored hub airports with coordinates")
-async def list_airports() -> ApiResponse:
-    """Return all currently available airport/observation coordinates.
+async def list_airports(
+    hubs_only: bool = Query(
+        default=True,
+        description="When true (default), return hub airports only for fast map/sidebar load.",
+    ),
+) -> ApiResponse:
+    """Return airport/observation coordinates for map overlays.
 
     Data sources:
-    - Airports table in SQLite (hub + non-hub)
+    - Airports table in SQLite (hubs by default; full IATA catalog when hubs_only=false)
     - Dynamic weather cache points (including GRD_* grid points)
     """
-    db_airports = await db_list_airports()
+    db_airports = await db_list_airports(is_hub=True if hubs_only else None)
     merged: list[dict] = []
     known_ids: set[str] = set()
     for item in db_airports:
@@ -276,24 +337,34 @@ async def list_airports() -> ApiResponse:
         if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
             continue
 
-        if str(point_id).startswith("GRD_"):
-            name = f"网格观测点 {point_id}"
+        is_grid = str(point_id).startswith("GRD_")
+        if is_grid:
+            name = f"天气网格 {point_id}"
         else:
             name = f"扩展观测点 {point_id}"
 
-        merged.append(
-            {
-                "iata": str(point_id),
-                "name": name,
-                "lat": float(lat),
-                "lon": float(lon),
-                "is_hub": False,
-                "point_type": "grid" if str(point_id).startswith("GRD_") else "weather",
-            }
-        )
+        entry: dict = {
+            "iata": str(point_id),
+            "name": name,
+            "lat": float(lat),
+            "lon": float(lon),
+            "is_hub": False,
+            "point_type": "grid" if is_grid else "weather",
+        }
+        if is_grid:
+            parsed = parse_grd_cell_id(str(point_id))
+            if parsed:
+                entry.update(grd_cell_bounds(parsed[0], parsed[1]))
+        merged.append(entry)
         known_ids.add(str(point_id))
 
     return ApiResponse(data=merged)
+
+
+@router.get("/weather-grid", summary="List active 5° weather grid cells")
+async def list_weather_grid() -> ApiResponse:
+    """Return 5°×5° grid cells for map overlay (polygon bounds + weather status)."""
+    return ApiResponse(data=await unified_pipeline.get_weather_grid_cells())
 
 
 @router.get("/flights/{flight_id}")
@@ -308,15 +379,47 @@ async def get_flight_detail(flight_id: str) -> ApiResponse:
     if detail is None:
         raise HTTPException(status_code=404, detail="flight not found")
 
-    data = detail.model_dump(mode="json")
+    data = _flatten_last_position(detail.model_dump(mode="json"))
 
-    # Enrich with departure / arrival airport weather from the hub cache.
-    dep_weather = await unified_pipeline.get_hub_weather_for_iata(detail.departure_airport)
-    arr_weather = await unified_pipeline.get_hub_weather_for_iata(detail.arrival_airport)
+    iata_codes = [
+        c.strip().upper()
+        for c in (detail.departure_airport, detail.arrival_airport)
+        if c and len(c.strip()) == 3
+    ]
+    airport_rows = await get_airports_by_iata(iata_codes)
+    by_iata = {str(r["iata_code"]).upper(): r for r in airport_rows}
+
+    def _airport_zh(iata: str | None) -> str | None:
+        if not iata:
+            return None
+        code = iata.strip().upper()
+        ap = by_iata.get(code)
+        if ap:
+            return airport_name_zh(
+                code,
+                name=str(ap.get("name") or ""),
+                city=str(ap.get("city") or ""),
+                country=str(ap.get("country") or ""),
+            )
+        return airport_name_zh(code)
+
+    data["departure_airport_zh"] = _airport_zh(detail.departure_airport)
+    data["arrival_airport_zh"] = _airport_zh(detail.arrival_airport)
+
+    dep_ap = by_iata.get((detail.departure_airport or "").strip().upper())
+    arr_ap = by_iata.get((detail.arrival_airport or "").strip().upper())
+    data["departure_lat"] = float(dep_ap["lat"]) if dep_ap and dep_ap.get("lat") is not None else None
+    data["departure_lon"] = float(dep_ap["lon"]) if dep_ap and dep_ap.get("lon") is not None else None
+    data["arrival_lat"] = float(arr_ap["lat"]) if arr_ap and arr_ap.get("lat") is not None else None
+    data["arrival_lon"] = float(arr_ap["lon"]) if arr_ap and arr_ap.get("lon") is not None else None
+
+    # Departure / arrival weather: hub cache → grid cache → on-demand at airport coords.
+    dep_weather = await unified_pipeline.get_weather_for_airport_iata(detail.departure_airport)
+    arr_weather = await unified_pipeline.get_weather_for_airport_iata(detail.arrival_airport)
     data["departure_weather"] = _to_weather_info(dep_weather)
     data["arrival_weather"] = _to_weather_info(arr_weather)
 
-    # Fetch live weather at the flight's current position.
+    # Current position weather (on-demand with TTL cache).
     pos = detail.last_position
     loc_weather: dict | None = None
     try:
