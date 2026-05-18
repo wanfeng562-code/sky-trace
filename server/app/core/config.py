@@ -108,6 +108,17 @@ class Settings(BaseSettings):
     playback_snapshot_interval_seconds: int = 300
     # How long playback snapshots are retained before cleanup (hours).
     playback_ttl_hours: int = 24
+    # Minimum seconds between SQLite track rows per flight (reduces DB growth).
+    tracks_persist_interval_seconds: int = 60
+    # How long position history rows are retained (hours).
+    tracks_ttl_hours: int = 24
+
+    # WebSocket: minimum seconds between full-fleet snapshot broadcasts.
+    ws_broadcast_min_interval_seconds: float = 2.0
+    # Environment: max GRD grid cells refreshed per environment cycle.
+    environment_grid_max_cells: int = 40
+    environment_grid_interval_min_seconds: int = 600
+    environment_grid_interval_max_seconds: int = 1800
 
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE),

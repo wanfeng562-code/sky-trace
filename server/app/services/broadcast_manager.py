@@ -40,20 +40,24 @@ class BroadcastManager:
         logger.debug("WS client disconnected (total=%d)", len(self._connections))
 
     async def broadcast(self, event: WsEvent) -> None:
-        """Serialize *event* and push to all registered clients.
-
-        Connections that raise during send are silently removed.
-        """
+        """Serialize *event* and push to all registered clients in parallel."""
         async with self._lock:
             if not self._connections:
                 return
             payload = event.model_dump(mode="json")
-            dead: set[WebSocket] = set()
-            for ws in self._connections:
-                try:
-                    await ws.send_json(payload)
-                except Exception:
-                    dead.add(ws)
-            self._connections -= dead
+            targets = list(self._connections)
+
+        dead: set[WebSocket] = set()
+
+        async def _send(ws: WebSocket) -> None:
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                dead.add(ws)
+
+        await asyncio.gather(*(_send(ws) for ws in targets), return_exceptions=True)
+
         if dead:
+            async with self._lock:
+                self._connections -= dead
             logger.debug("Removed %d dead WS connections", len(dead))

@@ -12,6 +12,7 @@ class FlightBrief(BaseModel):
     heading: int | None = None
     speed_kts: int | None = None
     altitude_ft: int | None = None
+    on_ground: bool | None = None
     aircraft_category: int | None = None  # OpenSky extended=1: 0=unknown,2=light,4=large,6=heavy,8=rotorcraft,14=UAV
     departure_airport: str | None = None
     arrival_airport: str | None = None
@@ -33,7 +34,7 @@ class FlightDetail(BaseModel):
     departure_airport: str | None = None
     arrival_airport: str | None = None
     aircraft_type: str | None = None
-    status: str = "enroute"
+    status: str = "en-route"
     dep_time: str | None = None
     arr_time: str | None = None
     airline_iata: str | None = None
