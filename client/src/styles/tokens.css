@@ -1,0 +1,56 @@
+/* Sky-Trace — 墨夜蓝 UI Shell（Slate 暮色，适配深色底图） */
+:root {
+	--bg-base: #0f172a;
+	--bg-surface: #1e293b;
+	--bg-elevated: #243044;
+	--bg-raised: #334155;
+	--bg-overlay: rgba(15, 23, 42, 0.92);
+
+	--text-primary: #f8fafc;
+	--text-secondary: #cbd5e1;
+	--text-muted: #94a3b8;
+
+	--accent: #3b82f6;
+	--accent-hover: #2563eb;
+	--accent-subtle: rgba(59, 130, 246, 0.18);
+
+	--success: #34d399;
+	--success-subtle: rgba(52, 211, 153, 0.15);
+	--warning: #fbbf24;
+	--warning-subtle: rgba(251, 191, 36, 0.12);
+	--danger: #f87171;
+	--danger-subtle: rgba(248, 113, 113, 0.12);
+
+	--border: rgba(255, 255, 255, 0.06);
+	--border-strong: rgba(255, 255, 255, 0.1);
+
+	--radius-sm: 8px;
+	--radius-md: 12px;
+	--radius-lg: 14px;
+	--radius-xl: 16px;
+
+	--shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.25);
+	--shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
+	--shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.45);
+
+	--t-fast: 0.12s ease;
+	--t-base: 0.22s ease;
+	--t-sidebar: 0.16s cubic-bezier(0.4, 0, 0.2, 1);
+
+	--nav-h: 64px;
+	--sidebar-w: 360px;
+	--sidebar-collapsed-w: 48px;
+	--panel-w: 360px;
+
+	--map-console-top: 16px;
+	--map-console-right: 16px;
+
+	/* ECharts 与 Shell 对齐 */
+	--chart-axis: #94a3b8;
+	--chart-axis-line: #475569;
+	--chart-grid-line: rgba(148, 163, 184, 0.12);
+
+	--scrollbar-track: #0f172a;
+	--scrollbar-thumb: #334155;
+	--scrollbar-thumb-hover: #475569;
+}
