@@ -1,10 +1,23 @@
-# Sky-Trace API 接口契约文档模板
+# Sky-Trace API 接口契约文档
+
+> 最后更新：**2026-05-18**。完整端点列表以 [后端统一采集与双配置使用说明.md](./后端统一采集与双配置使用说明.md) 与 Swagger `http://<host>:8000/docs` 为准。下文保留契约模板与核心字段约定。
 
 ## 1. 文档信息
-- 文档版本：v0.5.0
+- 文档版本：v0.6.0
 - 维护人：项目负责人（后端）
-- 最近更新：2026-05-12
+- 最近更新：2026-05-18
 - 适用范围：client 与 server 联调
+
+### 1.1 新增端点（2026-05）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/playback` | 历史回放帧 |
+| GET | `/api/v1/weather-grid` | GRD 天气网格 |
+| GET/PUT | `/api/v1/places/names` | 地名缓存 |
+| GET | `/api/v1/airports/lookup` | 批量机场元数据 |
+| GET | `/api/v1/tiles/{provider}/{path}` | 地图瓦片代理 |
+| GET | `/api/v1/api-monitor` | API 用量 JSON |
 
 ## 2. 约定与原则
 - 基础路径：/api/v1

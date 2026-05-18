@@ -1,3 +1,12 @@
+## 4.28（2026-05-18）文档与系统同步
+
+1. **文档全量同步**：遍历 `docs/`，按当前前后端实现更新架构、启动、API、地图、性能与交接类文档；新增 [docs/README.md](./README.md) 索引。
+2. **后端**：`tracks` 唯一索引迁移、FR24 后台合并、WS 广播节流、GRD 上限、`place_names` API；详见 [系统前后端全面修复与优化.md](./系统前后端全面修复与优化.md)。
+3. **前端**：`AppShell`、`map/`/`flight/` 组件拆分、`flightFeatureState`、`mapFilters`、`persistentCache`、`playbackTrail`、i18n。
+4. **部署说明**：生产前端以 **Cloudflare Pages**（sky-trace.pages.dev）为准，README 与启动文档已统一表述。
+
+---
+
 ## 4.27
 1. 更新 `.gitignore`，忽略 `server/data/*.db`、`server/data/*.db-wal`、`server/data/*.db-shm` 等 SQLite 数据库相关文件，避免本地运行数据被意外提交。
 2. 合并同学前端提交到主分支（Merge branch 'main' of remote）。

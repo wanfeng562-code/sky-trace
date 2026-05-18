@@ -1,5 +1,7 @@
 # API 接口测试记录与结果汇总
 
+> 补充端点（2026-05）：`/playback`、`/weather-grid`、`/places/names`、`/tiles/*`。完整列表见 [docs/README.md](./README.md)。
+
 ## 1. 目的
 本文件用于沉淀课程项目中的接口测试过程与证据，覆盖“API 搜索 -> 测试代码实现 -> 测试结果落盘 -> 结论分析”的完整链路。
 

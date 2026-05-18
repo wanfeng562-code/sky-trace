@@ -1,5 +1,7 @@
 # Sky-Trace 第三方 API 参考手册
 
+> 采集与额度策略见 [后端统一采集与双配置使用说明.md](./后端统一采集与双配置使用说明.md)。环境层已扩展 **GRD 5° 动态网格** 与 DB 驱动枢纽（2026-05-18）。
+
 > 整理时间：2025-06 / 更新：2026-05  
 > 覆盖范围：OpenSky Network、OpenWeatherMap、AirLabs v9、**FlightRadar24 (ddima16-flightradarapi)**、**MapTiler Cloud**、**Stadia Maps**  
 > 文档目的：汇总所有可调用端点、字段说明、额度限制，并标注对本项目的潜在价值

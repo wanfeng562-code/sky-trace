@@ -1,5 +1,7 @@
 # Sky-Trace 前端与 FR24 代理部署历程
 
+> **当前生产前端**：Cloudflare Pages（https://sky-trace.pages.dev/）。启动与 CORS 见 [启动说明与运行指南.md](./启动说明与运行指南.md)（2026-05-18）。
+
 > 记录时间：2026-05-11  
 > 覆盖内容：Cloudflare Pages 前端部署、Cloudflare Worker FR24 代理部署、反封禁联调
 

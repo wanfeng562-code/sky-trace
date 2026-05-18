@@ -1,3 +1,7 @@
+# Geo: 仅忽略超大源文件；各国 *-admin1.json 需提交或本地生成（见 scripts/build_admin1_geo.py）
+client/public/geo/ne_admin1.json
+# client/public/geo/*-admin1.json   # 若希望仓库更小、克隆后自行生成，可取消本行注释
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
