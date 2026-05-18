@@ -12,7 +12,7 @@ import aiohttp
 
 from app.core.config import settings
 from app.models.schemas import FlightBrief, WsEvent
-from app.services.db import list_airports as db_list_airports
+from app.services.db import get_airport_by_iata, list_airports as db_list_airports
 from app.services.flight_store import FlightStore
 from app.services.mock_collector import MockCollector
 
@@ -24,6 +24,43 @@ _OPENSKY_TOKEN_URL = (
     "https://auth.opensky-network.org/auth/realms/opensky-network"
     "/protocol/openid-connect/token"
 )
+
+_GRID_DEG = 5
+
+
+def _flight_grid_cell(lat: float, lon: float) -> tuple[int, int]:
+    """Return the southwest corner of the 5°×5° cell containing ``lat``/``lon``."""
+    return int(lat / _GRID_DEG) * _GRID_DEG, int(lon / _GRID_DEG) * _GRID_DEG
+
+
+def _grd_cell_id(clat: int, clon: int) -> str:
+    return f"GRD_{clat:+d}_{clon:+d}"
+
+
+def parse_grd_cell_id(cell_id: str) -> tuple[int, int] | None:
+    """Parse ``GRD_{lat}_{lon}`` into the cell southwest corner, or ``None``."""
+    if not cell_id.startswith("GRD_"):
+        return None
+    parts = cell_id[4:].split("_", 1)
+    if len(parts) != 2:
+        return None
+    try:
+        return int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+
+
+def grd_cell_bounds(clat: int, clon: int) -> dict[str, float]:
+    """Return axis-aligned bounds and centre for a 5° grid cell."""
+    return {
+        "cell_min_lat": float(clat),
+        "cell_min_lon": float(clon),
+        "cell_max_lat": float(clat + _GRID_DEG),
+        "cell_max_lon": float(clon + _GRID_DEG),
+        "center_lat": float(clat + _GRID_DEG / 2),
+        "center_lon": float(clon + _GRID_DEG / 2),
+    }
+
 
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Return great-circle distance in kilometres between two lat/lon points."""
@@ -141,6 +178,18 @@ class UnifiedDataPipeline:
         self._hub_weather_interval_min_s = 10 * 60
         self._hub_weather_interval_max_s = 30 * 60
         self._hub_weather_max_batch = 40
+        # On-demand airport / position weather (lat,lon rounded) → (expires_mono, payload)
+        self._ondemand_weather_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+        self._ondemand_weather_ttl_s = 600
+        self._grid_weather_next_due: dict[tuple[int, int], float] = {}
+        self._grid_weather_interval_min_s = float(
+            settings.environment_grid_interval_min_seconds
+        )
+        self._grid_weather_interval_max_s = float(
+            settings.environment_grid_interval_max_seconds
+        )
+        self._environment_grid_max_cells = int(settings.environment_grid_max_cells)
+        self._last_ws_broadcast_mono: float = 0.0
 
     async def start(self) -> None:
         if self._running:
@@ -296,32 +345,34 @@ class UnifiedDataPipeline:
         else:
             updates = self._mock_collector.collect()
 
-        await self._flight_store.apply_updates(updates)
+        await self._flight_store.apply_realtime_snapshot(updates)
 
-        # Merge cached FR24 data (collected asynchronously in the background).
-        # FR24 flights use a distinct "fr24-" prefix so they don't collide with
-        # OpenSky/mock flight IDs. Only merge when we have live primary data.
-        # When FR24 is disabled (403 received) we silently skip this step,
-        # falling back to OpenSky as the sole realtime source.
-        if updates and self._fr24_cache and not self._fr24_disabled:
-            await self._flight_store.apply_updates(self._fr24_cache)
-            logger.debug("FR24 cache merged: %d supplemental flights", len(self._fr24_cache))
+        # FR24 fleet is merged in _fr24_background_loop when cache refreshes;
+        # in-memory fr24-* rows persist across OpenSky ticks (not cleared by apply_realtime_snapshot).
 
-        await self._record_success("realtime", source=source, count=len(updates), note=note)
+        merged_flights = await self._flight_store.list_flights()
+        await self._record_success(
+            "realtime",
+            source=source,
+            count=len(merged_flights),
+            note=note,
+        )
 
-        # Persist a compact snapshot for historical playback (throttled).
+        # Persist merged fleet (OpenSky + FR24) for playback — same set as WS broadcast.
         if updates:
-            await self._maybe_save_snapshot(updates)
+            await self._maybe_save_snapshot(merged_flights)
 
         if self._broadcast_manager and updates:
-            # Use enriched list from flight_store (includes commercial dep/arr/airline data)
-            broadcast_flights = await self._flight_store.list_flights()
-            event = WsEvent(
-                event="snapshot",
-                ts=_utc_now(),
-                data=[f.model_dump(mode="json") for f in broadcast_flights],
-            )
-            await self._broadcast_manager.broadcast(event)
+            now_mono = asyncio.get_running_loop().time()
+            min_gap = float(settings.ws_broadcast_min_interval_seconds)
+            if now_mono - self._last_ws_broadcast_mono >= min_gap:
+                self._last_ws_broadcast_mono = now_mono
+                event = WsEvent(
+                    event="snapshot",
+                    ts=_utc_now(),
+                    data=[f.model_dump(mode="json") for f in merged_flights],
+                )
+                await self._broadcast_manager.broadcast(event)
 
     async def _collect_environment(self) -> None:
         if not settings.openweather_api_key:
@@ -428,7 +479,7 @@ class UnifiedDataPipeline:
         # ── Dynamic 5° grid cells based on active flight positions ─────────
         # Build the set of 5° cells already covered by fixed hub airports.
         hub_cells: set[tuple[int, int]] = {
-            (int(lat / 5) * 5, int(lon / 5) * 5) for _, (lat, lon) in hubs.items()
+            _flight_grid_cell(lat, lon) for _, (lat, lon) in hubs.items()
         }
 
         # Collect unique 5° grid cells from current active flights.
@@ -440,22 +491,26 @@ class UnifiedDataPipeline:
 
         grid_cells: set[tuple[int, int]] = set()
         for f in active_flights:
-            cell = (int(f.lat / 5) * 5, int(f.lon / 5) * 5)
+            cell = _flight_grid_cell(f.lat, f.lon)
             if cell not in hub_cells:
                 grid_cells.add(cell)
 
-        # Limit to 80 extra grid cells; sample randomly if more.
-        _MAX_GRID = 80
-        selected_cells: list[tuple[int, int]] = (
-            random.sample(sorted(grid_cells), _MAX_GRID)
-            if len(grid_cells) > _MAX_GRID
-            else list(grid_cells)
-        )
+        due_cells = [
+            cell
+            for cell in grid_cells
+            if now_mono >= self._grid_weather_next_due.get(cell, 0.0)
+        ]
+        random.shuffle(due_cells)
+        cap = self._environment_grid_max_cells
+        selected_cells = due_cells[:cap]
 
         if selected_cells:
             # Representative point: centre of each 5° cell.
             grid_points: dict[str, tuple[float, float]] = {
-                f"GRD_{clat:+d}_{clon:+d}": (clat + 2.5, clon + 2.5)
+                _grd_cell_id(clat, clon): (
+                    clat + _GRID_DEG / 2,
+                    clon + _GRID_DEG / 2,
+                )
                 for clat, clon in selected_cells
             }
             grid_results = await asyncio.gather(
@@ -471,6 +526,12 @@ class UnifiedDataPipeline:
                 if w is not None:
                     new_weather[key] = w
                     grid_ok += 1
+                    parsed = parse_grd_cell_id(key)
+                    if parsed:
+                        self._grid_weather_next_due[parsed] = now_mono + random.uniform(
+                            self._grid_weather_interval_min_s,
+                            self._grid_weather_interval_max_s,
+                        )
             logger.info(
                 "environment grid: %d/%d cells OK (covering ~%d active flights)",
                 grid_ok, len(selected_cells), len(active_flights),
@@ -507,30 +568,32 @@ class UnifiedDataPipeline:
             return
 
         flights = await self._fetch_airlabs_bulk_snapshot()
-        count = 0
+        batch: list[dict[str, Any]] = []
         for f in flights:
             cs = f.get("flight_icao") or f.get("flight_iata")
             if not cs:
                 continue
-            dep = f.get("dep_iata") or f.get("dep_icao")
-            arr = f.get("arr_iata") or f.get("arr_icao")
-            ac = f.get("aircraft_icao")
-            status = f.get("status") or "en-route"
-            airline_iata = f.get("airline_iata")
-            dep_time = f.get("dep_time")
-            arr_time = f.get("arr_time")
-            await self._flight_store.upsert_detail_extra(
-                cs,
-                departure_airport=dep,
-                arrival_airport=arr,
-                aircraft_type=ac,
-                status=status,
-                source="airlabs",
-                airline_iata=airline_iata,
-                dep_time=dep_time,
-                arr_time=arr_time,
+            batch.append(
+                {
+                    "callsign": str(cs).strip(),
+                    "departure_airport": f.get("dep_iata") or f.get("dep_icao"),
+                    "arrival_airport": f.get("arr_iata") or f.get("arr_icao"),
+                    "aircraft_type": f.get("aircraft_icao"),
+                    "status": f.get("status") or None,
+                    "source": "airlabs",
+                    "airline_iata": f.get("airline_iata"),
+                    "dep_time": f.get("dep_time"),
+                    "arr_time": f.get("arr_time"),
+                }
             )
-            count += 1
+        count = await self._flight_store.upsert_detail_extra_batch(batch)
+
+        async with self._lock:
+            self._commercial_cache = {
+                "source": "airlabs",
+                "updated_at": _utc_now().isoformat(),
+                "enriched": count,
+            }
 
         logger.info("AirLabs bulk snapshot: %d flights enriched", count)
         await self._record_success("commercial", source="airlabs", count=count)
@@ -770,6 +833,7 @@ class UnifiedDataPipeline:
                 now = _utc_now()
                 new_cache: list[FlightBrief] = []
                 new_id_map: dict[str, str] = {}
+                detail_batch: list[dict[str, Any]] = []
                 for f in collected:
                     lat = _safe_float(getattr(f, "latitude", None))
                     lon = _safe_float(getattr(f, "longitude", None))
@@ -786,6 +850,8 @@ class UnifiedDataPipeline:
                     fr24_internal_id = str(getattr(f, "id", "") or "").strip()
                     if fr24_internal_id:
                         new_id_map[fid] = fr24_internal_id
+                    alt_ft = int(round(altitude_ft_raw)) if altitude_ft_raw is not None else None
+                    on_ground = alt_ft is not None and alt_ft <= 100
                     new_cache.append(FlightBrief(
                         flight_id=fid,
                         callsign=callsign,
@@ -793,7 +859,8 @@ class UnifiedDataPipeline:
                         lon=round(lon, 6),
                         heading=int(round(heading_raw)) % 360 if heading_raw is not None else None,
                         speed_kts=int(round(speed_kts_raw)) if speed_kts_raw is not None else None,
-                        altitude_ft=int(round(altitude_ft_raw)) if altitude_ft_raw is not None else None,
+                        altitude_ft=alt_ft,
+                        on_ground=on_ground,
                         aircraft_category=None,
                         updated_at=now,
                     ))
@@ -809,25 +876,30 @@ class UnifiedDataPipeline:
                     # Only upsert when we have at least one useful field
                     if (dep or arr or ac_type or flight_num) and (callsign or flight_num):
                         cs_key = callsign or flight_num
-                        # Fire-and-forget; errors are swallowed inside upsert_detail_extra
-                        asyncio.ensure_future(
-                            self._flight_store.upsert_detail_extra(
-                                cs_key,
-                                departure_airport=dep,
-                                arrival_airport=arr,
-                                aircraft_type=ac_type,
-                                status=None,
-                                source="fr24",
-                                airline_iata=al_iata,
-                            )
+                        detail_batch.append(
+                            {
+                                "callsign": cs_key,
+                                "departure_airport": dep,
+                                "arrival_airport": arr,
+                                "aircraft_type": ac_type,
+                                "status": None,
+                                "source": "fr24",
+                                "airline_iata": al_iata,
+                            }
                         )
 
                 self._fr24_cache = new_cache
                 self._fr24_id_map = new_id_map
+                if new_cache:
+                    await self._flight_store.apply_fr24_snapshot(new_cache)
+                if detail_batch:
+                    await self._flight_store.upsert_detail_extra_batch(detail_batch)
                 logger.info(
                     "FR24 background collect complete: %d unique flights cached, "
-                    "%d with internal IDs, commercial enrichment queued",
-                    len(new_cache), len(new_id_map),
+                    "%d with internal IDs, %d commercial rows",
+                    len(new_cache),
+                    len(new_id_map),
+                    len(detail_batch),
                 )
 
             # Layer-2 cool-down: 20-30 s quiet window before starting next round.
@@ -982,6 +1054,7 @@ class UnifiedDataPipeline:
             heading = int(round(heading_raw)) % 360 if heading_raw is not None else None
             altitude_ft = int(round(altitude_ft_raw)) if altitude_ft_raw is not None else None
             speed_kts = int(round(speed_kts_raw)) if speed_kts_raw is not None else None
+            on_ground = altitude_ft is not None and altitude_ft <= 100
 
             icao24 = str(getattr(f, "icao_24bit", "") or "").strip().lower()
             callsign = str(getattr(f, "callsign", "") or "").strip() or None
@@ -999,6 +1072,7 @@ class UnifiedDataPipeline:
                     heading=heading,
                     speed_kts=speed_kts,
                     altitude_ft=altitude_ft,
+                    on_ground=on_ground,
                     aircraft_category=None,
                     updated_at=now,
                 )
@@ -1094,10 +1168,12 @@ class UnifiedDataPipeline:
 
             speed_ms = _safe_float(row[9])
             altitude_m = _safe_float(row[7])
+            on_ground_raw = row[8] if len(row) > 8 else None
             heading_raw = _safe_float(row[10])
 
             speed_kts = int(round(speed_ms * 1.943844)) if speed_ms is not None else None
             altitude_ft = int(round(altitude_m * 3.28084)) if altitude_m is not None else None
+            on_ground = bool(on_ground_raw) if on_ground_raw is not None else None
             heading = int(round(heading_raw)) % 360 if heading_raw is not None else None
 
             icao24 = (str(row[0]).strip() if row[0] else "").lower()
@@ -1117,6 +1193,7 @@ class UnifiedDataPipeline:
                     heading=heading,
                     speed_kts=speed_kts,
                     altitude_ft=altitude_ft,
+                    on_ground=on_ground,
                     aircraft_category=category,
                     updated_at=now,
                 )
@@ -1287,18 +1364,28 @@ class UnifiedDataPipeline:
                 "hdg": f.heading,
                 "cat": f.aircraft_category,
                 "cs": f.callsign,
+                "dep": f.departure_airport,
+                "arr": f.arrival_airport,
             }
             for f in flights
         ]
         data_json = json.dumps(compact, separators=(",", ":"))
 
         try:
-            from app.services.db import cleanup_old_snapshots, save_flight_snapshot
+            from app.services.db import persist_playback_snapshot
 
-            await save_flight_snapshot(now.isoformat(), data_json)
-            removed = await cleanup_old_snapshots(settings.playback_ttl_hours)
-            if removed:
-                logger.debug("Playback TTL cleanup: removed %d old snapshots", removed)
+            snap_removed, tracks_removed = await persist_playback_snapshot(
+                now.isoformat(),
+                data_json,
+                snapshot_ttl_hours=settings.playback_ttl_hours,
+                tracks_ttl_hours=settings.tracks_ttl_hours,
+            )
+            if snap_removed or tracks_removed:
+                logger.debug(
+                    "Playback TTL cleanup: removed %d snapshots, %d track rows",
+                    snap_removed,
+                    tracks_removed,
+                )
         except Exception as exc:
             logger.warning("Failed to save flight snapshot: %s", exc)
             return
@@ -1308,6 +1395,82 @@ class UnifiedDataPipeline:
     # ------------------------------------------------------------------
     # Weather lookup helpers
     # ------------------------------------------------------------------
+
+    async def get_weather_grid_cells(self) -> list[dict[str, Any]]:
+        """Return active 5° weather grid cells for map overlay.
+
+        Cells are derived from current flight positions (excluding hub-covered
+        cells) plus any ``GRD_*`` entries already present in the weather cache.
+        """
+        hub_rows = await db_list_airports(is_hub=True)
+        hub_cells: set[tuple[int, int]] = {
+            _flight_grid_cell(float(r["lat"]), float(r["lon"]))
+            for r in hub_rows
+            if isinstance(r.get("lat"), (int, float))
+            and isinstance(r.get("lon"), (int, float))
+        }
+
+        try:
+            active_flights = await self._flight_store.list_flights()
+        except Exception:
+            active_flights = []
+
+        cell_flight_counts: dict[tuple[int, int], int] = {}
+        for f in active_flights:
+            cell = _flight_grid_cell(f.lat, f.lon)
+            if cell not in hub_cells:
+                cell_flight_counts[cell] = cell_flight_counts.get(cell, 0) + 1
+
+        async with self._lock:
+            weather_snap = dict(self._weather_cache)
+
+        seen: set[tuple[int, int]] = set()
+        result: list[dict[str, Any]] = []
+
+        def _weather_description(payload: dict | None) -> str | None:
+            if not isinstance(payload, dict):
+                return None
+            weather = payload.get("weather")
+            if isinstance(weather, list) and weather and isinstance(weather[0], dict):
+                desc = weather[0].get("description")
+                if isinstance(desc, str) and desc.strip():
+                    return desc
+            desc = payload.get("description")
+            return desc if isinstance(desc, str) and desc.strip() else None
+
+        def append_cell(clat: int, clon: int, flight_count: int = 0) -> None:
+            if (clat, clon) in seen:
+                return
+            seen.add((clat, clon))
+            cell_id = _grd_cell_id(clat, clon)
+            w = weather_snap.get(cell_id)
+            bounds = grd_cell_bounds(clat, clon)
+            temp: float | None = None
+            if isinstance(w, dict):
+                raw = w.get("temperature_c", w.get("temp_c"))
+                if isinstance(raw, (int, float)):
+                    temp = float(raw)
+            result.append(
+                {
+                    "id": cell_id,
+                    **bounds,
+                    "flight_count": flight_count,
+                    "has_weather": w is not None,
+                    "temperature_c": temp,
+                    "description": _weather_description(w),
+                }
+            )
+
+        for cell, count in sorted(cell_flight_counts.items()):
+            append_cell(cell[0], cell[1], count)
+
+        for key in weather_snap:
+            parsed = parse_grd_cell_id(key)
+            if parsed:
+                append_cell(parsed[0], parsed[1], cell_flight_counts.get(parsed, 0))
+
+        result.sort(key=lambda item: (item["cell_min_lat"], item["cell_min_lon"]))
+        return result
 
     async def get_nearest_hub_weather(self, lat: float, lon: float) -> dict[str, Any]:
         """Return cached weather + AQI for the nearest hub that has cached data.
@@ -1373,19 +1536,68 @@ class UnifiedDataPipeline:
             return None
         return {"weather": weather, "air_quality": aq}
 
-    async def fetch_weather_at_coords(self, lat: float, lon: float) -> dict[str, Any] | None:
-        """Fetch live OpenWeather data at arbitrary coordinates.
+    async def get_weather_for_airport_iata(self, iata: str | None) -> dict[str, Any] | None:
+        """Hub/grid cache first; otherwise on-demand OpenWeather at airport coordinates."""
+        if not iata:
+            return None
+        key = iata.strip().upper()
 
-        Used for the flight's current position ("location weather").
-        Returns ``None`` when OpenWeather is not configured or the request fails.
-        """
+        cached = await self.get_hub_weather_for_iata(key)
+        if cached and cached.get("weather"):
+            return cached
+
+        ap = await get_airport_by_iata(key)
+        if not ap:
+            return cached
+
+        lat = ap.get("lat")
+        lon = ap.get("lon")
+        if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+            return cached
+
+        clat, clon = _flight_grid_cell(float(lat), float(lon))
+        grid_key = _grd_cell_id(clat, clon)
+        async with self._lock:
+            grid_weather = self._weather_cache.get(grid_key)
+        if grid_weather:
+            return {"weather": grid_weather, "air_quality": None}
+
+        weather = await self._fetch_weather_cached_coords(float(lat), float(lon))
+        if weather is None:
+            return cached
+        return {"weather": weather, "air_quality": None}
+
+    async def _fetch_weather_cached_coords(
+        self, lat: float, lon: float
+    ) -> dict[str, Any] | None:
+        """Fetch OpenWeather for coordinates with a short in-memory TTL cache."""
+        cache_key = f"{round(lat, 2)},{round(lon, 2)}"
+        now = asyncio.get_running_loop().time()
+        async with self._lock:
+            entry = self._ondemand_weather_cache.get(cache_key)
+            if entry and entry[0] > now:
+                return entry[1]
+
         if not settings.openweather_api_key:
             return None
         try:
-            return await self._fetch_openweather_by_coords(lat, lon)
+            weather = await self._fetch_openweather_by_coords(lat, lon)
         except Exception as exc:
-            logger.debug("fetch_weather_at_coords(%.4f, %.4f) failed: %s", lat, lon, exc)
+            logger.debug("_fetch_weather_cached_coords(%.4f, %.4f) failed: %s", lat, lon, exc)
             return None
+        if weather is None:
+            return None
+
+        async with self._lock:
+            self._ondemand_weather_cache[cache_key] = (
+                now + self._ondemand_weather_ttl_s,
+                weather,
+            )
+        return weather
+
+    async def fetch_weather_at_coords(self, lat: float, lon: float) -> dict[str, Any] | None:
+        """Fetch live OpenWeather data at arbitrary coordinates (with short TTL cache)."""
+        return await self._fetch_weather_cached_coords(lat, lon)
 
     # ------------------------------------------------------------------
     # Quota monitoring
