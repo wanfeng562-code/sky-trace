@@ -31,19 +31,28 @@
 			<span class="wx-unit">km</span>
 			<span class="wx-key">能见度</span>
 		</div>
-		<div v-if="weather.description" class="wx-item wx-desc">
-			<span class="wx-val wx-val-sm">{{ weather.description }}</span>
+		<div v-if="descriptionText" class="wx-item wx-desc">
+			<span class="wx-val wx-val-sm">{{ descriptionText }}</span>
 			<span class="wx-key">天气</span>
 		</div>
 	</div>
 </template>
 
 <script setup lang="ts">
+	import { computed } from "vue";
+	import { useLocaleStore } from "../i18n";
 	import type { WeatherInfo } from "../types/flight";
+	import { formatWeatherDescription } from "../utils/flightDetailLocale";
 
-	defineProps<{
+	const props = defineProps<{
 		weather: WeatherInfo;
 	}>();
+
+	const localeStore = useLocaleStore();
+
+	const descriptionText = computed(() =>
+		formatWeatherDescription(props.weather.description, localeStore.locale),
+	);
 </script>
 
 <style scoped>

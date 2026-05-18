@@ -1,5 +1,12 @@
 import axios from "axios";
 
+import {
+	AIRPORTS_CACHE_TTL_MS,
+	PLAYBACK_CACHE_TTL_MS,
+	readPersistentCache,
+	writePersistentCache,
+} from "./persistentCache";
+
 import type {
 	ApiResponse,
 	AirportInfo,
@@ -11,6 +18,7 @@ import type {
 	PlaybackData,
 	ScheduleEntry,
 	TrackPoint,
+	WeatherGridCell,
 } from "../types/flight";
 
 const api = axios.create({
@@ -121,12 +129,34 @@ async function getWithPolicy<T>(
 export async function fetchFlights(
 	params?: FlightQueryParams,
 ): Promise<FlightBrief[]> {
-	const data = await getWithPolicy<{ total: number; items: FlightBrief[] }>(
-		"/flights",
-		params,
-		{ retries: 1, timeoutMs: 18000 },
-	);
-	return data.items;
+	const pageSize = 2000;
+	let page = 1;
+	const all: FlightBrief[] = [];
+	let total = Number.POSITIVE_INFINITY;
+
+	const listCacheKey = `flights:list:${stableStringify(params ?? {})}`;
+	if (!params?.callsign) {
+		const cachedList = readPersistentCache<FlightBrief[]>(listCacheKey);
+		if (cachedList?.length) return cachedList;
+	}
+
+	while (all.length < total) {
+		const data = await getWithPolicy<{ total: number; items: FlightBrief[] }>(
+			"/flights",
+			{ ...params, page, page_size: pageSize },
+			{ retries: 1, timeoutMs: 60000 },
+		);
+		total = data.total;
+		all.push(...data.items);
+		if (all.length >= total || !data.items.length) break;
+		page += 1;
+		if (page > 50) break;
+	}
+
+	if (!params?.callsign && all.length) {
+		writePersistentCache(listCacheKey, all, 15_000);
+	}
+	return all;
 }
 
 export async function fetchFlightDetail(
@@ -147,10 +177,24 @@ export async function fetchFlightDetail(
 		return detail;
 	}
 
+	const lat = detail.lat ?? last.lat;
+	const lon = detail.lon ?? last.lon;
+	const hasPos =
+		lat != null &&
+		lon != null &&
+		Number.isFinite(lat) &&
+		Number.isFinite(lon) &&
+		Math.abs(lat) <= 90 &&
+		Math.abs(lon) <= 180;
+
+	if (!hasPos) {
+		return detail;
+	}
+
 	return {
 		...detail,
-		lat: detail.lat ?? last.lat ?? 0,
-		lon: detail.lon ?? last.lon ?? 0,
+		lat,
+		lon,
 		heading: detail.heading ?? last.heading,
 		speed_kts: detail.speed_kts ?? last.speed_kts,
 		altitude_ft: detail.altitude_ft ?? last.altitude_ft,
@@ -175,9 +219,34 @@ export async function fetchFlightStats(): Promise<FlightStats> {
 	});
 }
 
-export async function fetchAirports(force = false): Promise<AirportInfo[]> {
-	return getWithPolicy<AirportInfo[]>("/airports", undefined, {
-		ttlMs: force ? 0 : 30 * 60 * 1000,
+export async function fetchAirports(
+	force = false,
+	opts?: { hubsOnly?: boolean },
+): Promise<AirportInfo[]> {
+	const hubsOnly = opts?.hubsOnly !== false;
+	const persistKey = `airports:${hubsOnly ? "hubs" : "all"}`;
+	if (!force) {
+		const persisted = readPersistentCache<AirportInfo[]>(persistKey);
+		if (persisted?.length) return persisted;
+	}
+	const data = await getWithPolicy<AirportInfo[]>(
+		"/airports",
+		{ hubs_only: hubsOnly },
+		{
+			ttlMs: force ? 0 : 30 * 60 * 1000,
+			retries: 1,
+			timeoutMs: hubsOnly ? 20000 : 120000,
+		},
+	);
+	if (data.length) {
+		writePersistentCache(persistKey, data, AIRPORTS_CACHE_TTL_MS);
+	}
+	return data;
+}
+
+export async function fetchWeatherGrid(force = false): Promise<WeatherGridCell[]> {
+	return getWithPolicy<WeatherGridCell[]>("/weather-grid", undefined, {
+		ttlMs: force ? 0 : 60 * 1000,
 		retries: 1,
 		timeoutMs: 15000,
 	});
@@ -188,10 +257,34 @@ export async function fetchPlaybackFrames(
 	end: string,
 	interval = 300,
 ): Promise<PlaybackData> {
-	return getWithPolicy<PlaybackData>(
+	const persistKey = `playback:${start}|${end}|${interval}`;
+	const persisted = readPersistentCache<PlaybackData>(persistKey);
+	if (persisted?.frames) return persisted;
+	const data = await getWithPolicy<PlaybackData>(
 		"/playback",
 		{ start, end, interval },
-		{ retries: 1, timeoutMs: 30000 },
+		{ ttlMs: PLAYBACK_CACHE_TTL_MS,
+			retries: 1,
+			timeoutMs: 30000,
+		},
+	);
+	if (data.frames?.length) {
+		writePersistentCache(persistKey, data, PLAYBACK_CACHE_TTL_MS);
+	}
+	return data;
+}
+
+export async function fetchDatahubWeather(
+	force = false,
+): Promise<Record<string, unknown>> {
+	return getWithPolicy<Record<string, unknown>>(
+		"/datahub/weather",
+		undefined,
+		{
+			ttlMs: force ? 0 : 60 * 1000,
+			retries: 1,
+			timeoutMs: 15000,
+		},
 	);
 }
 
@@ -213,6 +306,36 @@ export async function fetchAirQuality(): Promise<AirQualityHub[]> {
 			pm10: (entry.components as Record<string, number> | undefined)?.pm10,
 		};
 	});
+}
+
+export type PlaceNameRecord = {
+	cache_key: string;
+	name_zh: string;
+	name_en?: string | null;
+	source_text?: string | null;
+};
+
+export async function fetchPlaceNames(
+	keys: string[],
+): Promise<PlaceNameRecord[]> {
+	if (!keys.length) return [];
+	const data = await getWithPolicy<{ items: PlaceNameRecord[] }>(
+		"/places/names",
+		{ keys: keys.join(",") },
+		{ ttlMs: 60_000, retries: 1, timeoutMs: 15000 },
+	);
+	return data.items ?? [];
+}
+
+export async function upsertPlaceNames(
+	items: PlaceNameRecord[],
+): Promise<number> {
+	if (!items.length) return 0;
+	const data = await api.put<ApiResponse<{ upserted: number }>>(
+		"/places/names",
+		{ items },
+	);
+	return data.data.data?.upserted ?? 0;
 }
 
 export async function fetchAirportSchedules(

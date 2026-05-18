@@ -22,29 +22,27 @@
 
 	<!-- 详情内容 -->
 	<div v-else-if="detail" class="dp-panel">
-		<!-- 顶部：呼号 + 航空公司 Logo + 关闭 -->
+		<!-- 顶部：呼号 + 航空公司 Logo -->
 		<div class="dp-header">
 			<div class="dp-header-info">
 				<div class="dp-callsign">{{ detail.callsign || detail.flight_id }}</div>
 				<div class="dp-flight-id">{{ detail.flight_id }}</div>
 			</div>
-			<div class="dp-header-actions">
+			<button
+				type="button"
+				:class="['dp-mark-star', { on: isMarked }]"
+				:title="markTitle"
+				@click="toggleMark"
+			>
+				★
+			</button>
+			<div v-if="detail.airline_iata" class="dp-logo-wrap">
 				<img
-					v-if="detail.airline_iata"
 					:src="`https://airlabs.co/img/airline/m/${detail.airline_iata}.png`"
 					class="dp-logo"
 					:alt="detail.airline_iata"
-					@error="
-						(e) => ((e.target as HTMLImageElement).style.display = 'none')
-					"
+					@error="onLogoError"
 				/>
-				<button class="dp-close" @click="emit('close')" title="关闭">
-					<svg viewBox="0 0 16 16" fill="currentColor">
-						<path
-							d="M4.293 4.293a1 1 0 011.414 0L8 6.586l2.293-2.293a1 1 0 111.414 1.414L9.414 8l2.293 2.293a1 1 0 01-1.414 1.414L8 9.414l-2.293 2.293a1 1 0 01-1.414-1.414L6.586 8 4.293 5.707a1 1 0 010-1.414z"
-						/>
-					</svg>
-				</button>
 			</div>
 		</div>
 
@@ -90,6 +88,7 @@
 		>
 			<div class="dp-route-stop">
 				<span class="dp-iata">{{ detail.departure_airport || "--" }}</span>
+				<span v-if="depAirportZh" class="dp-airport-zh">{{ depAirportZh }}</span>
 				<span class="dp-route-role">出发</span>
 				<span v-if="detail.dep_time" class="dp-route-time">{{
 					detail.dep_time
@@ -111,6 +110,7 @@
 			</div>
 			<div class="dp-route-stop dp-route-stop-right">
 				<span class="dp-iata">{{ detail.arrival_airport || "--" }}</span>
+				<span v-if="arrAirportZh" class="dp-airport-zh">{{ arrAirportZh }}</span>
 				<span class="dp-route-role">到达</span>
 				<span v-if="detail.arr_time" class="dp-route-time">{{
 					detail.arr_time
@@ -150,39 +150,70 @@
 <script setup lang="ts">
 	import { computed } from "vue";
 	import WeatherBlock from "./WeatherBlock.vue";
+	import { translate, useLocaleStore } from "../i18n";
+	import { airportNameZh } from "../data/airportDisplay";
+	import { toSimplifiedChinese } from "../utils/zhLocale";
+	import { useFlightStore } from "../stores/flight";
 	import type { FlightDetail } from "../types/flight";
+	import {
+		flightStatusClass,
+		formatFlightStatusLabel,
+	} from "../utils/flightDetailLocale";
 
 	const props = defineProps<{
 		detail: FlightDetail | null;
 		loading?: boolean;
 	}>();
 
-	const emit = defineEmits<{
-		close: [];
-	}>();
+	const store = useFlightStore();
+	const localeStore = useLocaleStore();
 
-	const STATUS_MAP: Record<string, { label: string; cls: string }> = {
-		en_route: { label: "飞行中", cls: "status-airborne" },
-		landed: { label: "已落地", cls: "status-ground" },
-		scheduled: { label: "计划中", cls: "status-scheduled" },
-		cancelled: { label: "已取消", cls: "status-cancelled" },
-	};
+	const isMarked = computed(() =>
+		props.detail ? store.isMarked(props.detail.flight_id) : false,
+	);
 
-	const statusLabel = computed(() => {
-		if (!props.detail?.status) {
-			return (props.detail?.altitude_ft ?? 0) > 100 ? "飞行中" : "地面";
-		}
-		return STATUS_MAP[props.detail.status]?.label ?? props.detail.status;
+	const markTitle = computed(() =>
+		isMarked.value
+			? translate(localeStore.t, "marked.remove")
+			: translate(localeStore.t, "marked.add"),
+	);
+
+	function toggleMark() {
+		if (props.detail) store.toggleMarkFlight(props.detail.flight_id);
+	}
+
+	const statusLabel = computed(() =>
+		formatFlightStatusLabel(
+			props.detail?.status,
+			localeStore.locale,
+			props.detail?.altitude_ft,
+		),
+	);
+
+	const statusClass = computed(() =>
+		flightStatusClass(props.detail?.status, props.detail?.altitude_ft),
+	);
+
+	const depAirportZh = computed(() => {
+		if (localeStore.locale !== "zh-CN") return "";
+		const raw =
+			props.detail?.departure_airport_zh?.trim() ||
+			airportNameZh(props.detail?.departure_airport, store.airports);
+		return toSimplifiedChinese(raw);
 	});
 
-	const statusClass = computed(() => {
-		if (!props.detail?.status) {
-			return (props.detail?.altitude_ft ?? 0) > 100
-				? "status-airborne"
-				: "status-ground";
-		}
-		return STATUS_MAP[props.detail.status]?.cls ?? "";
+	const arrAirportZh = computed(() => {
+		if (localeStore.locale !== "zh-CN") return "";
+		const raw =
+			props.detail?.arrival_airport_zh?.trim() ||
+			airportNameZh(props.detail?.arrival_airport, store.airports);
+		return toSimplifiedChinese(raw);
 	});
+
+	function onLogoError(event: Event) {
+		const wrap = (event.target as HTMLImageElement).closest(".dp-logo-wrap");
+		if (wrap) (wrap as HTMLElement).style.display = "none";
+	}
 </script>
 
 <style scoped>
@@ -242,9 +273,34 @@
 	/* ── Header */
 	.dp-header {
 		display: flex;
+		align-items: center;
 		justify-content: space-between;
-		align-items: flex-start;
+		gap: 12px;
 		margin-bottom: 10px;
+	}
+
+	.dp-header-info {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.dp-mark-star {
+		flex-shrink: 0;
+		width: 36px;
+		height: 36px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: var(--bg-elevated);
+		font-size: 18px;
+		line-height: 1;
+		color: var(--text-muted);
+		cursor: pointer;
+	}
+
+	.dp-mark-star.on {
+		border-color: #f43f5e;
+		color: #f43f5e;
+		background: rgba(244, 63, 94, 0.12);
 	}
 
 	.dp-callsign {
@@ -258,50 +314,33 @@
 		font-size: 11px;
 		color: var(--text-muted);
 		margin-top: 2px;
+		word-break: break-all;
 	}
 
-	.dp-header-actions {
-		display: flex;
-		align-items: center;
-		gap: 8px;
+	.dp-logo-wrap {
 		flex-shrink: 0;
-	}
-
-	.dp-logo {
-		width: 36px;
-		height: 36px;
-		object-fit: contain;
-		border-radius: var(--radius-sm);
-		background: var(--bg-raised);
-		padding: 2px;
-	}
-
-	.dp-close {
-		width: 28px;
-		height: 28px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		min-width: 80px;
+		max-width: 112px;
+		height: 48px;
+		padding: 6px 12px;
 		background: var(--bg-raised);
 		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		color: var(--text-secondary);
-		cursor: pointer;
-		transition: all var(--t-fast);
-		padding: 0;
-		flex-shrink: 0;
+		border-radius: var(--radius-md);
 	}
 
-	.dp-close svg {
-		width: 12px;
-		height: 12px;
+	.dp-logo {
+		display: block;
+		width: auto;
+		height: auto;
+		max-width: 100%;
+		max-height: 40px;
+		object-fit: contain;
+		object-position: center;
 	}
 
-	.dp-close:hover {
-		background: var(--danger-subtle);
-		color: var(--danger);
-		border-color: var(--danger);
-	}
 
 	/* ── Badges */
 	.dp-badge-row {
@@ -416,6 +455,18 @@
 		font-weight: 700;
 		color: var(--text-primary);
 		letter-spacing: 0.04em;
+	}
+
+	.dp-airport-zh {
+		font-size: 11px;
+		color: var(--text-secondary);
+		line-height: 1.3;
+		max-width: 120px;
+	}
+
+	.dp-route-stop-right .dp-airport-zh {
+		text-align: right;
+		margin-left: auto;
 	}
 
 	.dp-route-role {

@@ -2,7 +2,7 @@
 	<div class="stats-page">
 		<div v-if="loading" class="stats-loading">
 			<div class="stats-spinner"></div>
-			<span>加载中...</span>
+			<span>{{ t("stats.loading") }}</span>
 		</div>
 
 		<div v-else class="stats-body">
@@ -18,7 +18,7 @@
 					</div>
 					<div class="kpi-main">
 						<div class="kpi-num">{{ stats.total }}</div>
-						<div class="kpi-label">总追踪航班</div>
+						<div class="kpi-label">{{ t("stats.kpiTotal") }}</div>
 					</div>
 				</div>
 				<div class="kpi-card kpi-airborne">
@@ -31,7 +31,7 @@
 					</div>
 					<div class="kpi-main">
 						<div class="kpi-num">{{ stats.airborne_count }}</div>
-						<div class="kpi-label">飞行中</div>
+						<div class="kpi-label">{{ t("stats.kpiAirborne") }}</div>
 						<div class="kpi-pct" v-if="stats.total > 0">
 							{{ ((stats.airborne_count / stats.total) * 100).toFixed(1) }}%
 						</div>
@@ -49,7 +49,7 @@
 					</div>
 					<div class="kpi-main">
 						<div class="kpi-num">{{ stats.on_ground_count }}</div>
-						<div class="kpi-label">在地面</div>
+						<div class="kpi-label">{{ t("stats.kpiGround") }}</div>
 						<div class="kpi-pct" v-if="stats.total > 0">
 							{{ ((stats.on_ground_count / stats.total) * 100).toFixed(1) }}%
 						</div>
@@ -79,19 +79,24 @@
 			<!-- 图表区域 -->
 			<div class="charts-grid">
 				<div class="chart-panel">
-					<div class="chart-title">飞行状态分布</div>
+					<div class="chart-title">{{ t("stats.chartStatus") }}</div>
 					<div ref="statusChartEl" class="chart-canvas"></div>
 				</div>
 				<div class="chart-panel">
-					<div class="chart-title">高度分布</div>
+					<div class="chart-title">{{ t("stats.chartAlt") }}</div>
 					<div ref="altChartEl" class="chart-canvas"></div>
 				</div>
 				<div class="chart-panel">
-					<div class="chart-title">速度分布</div>
+					<div class="chart-title">{{ t("stats.chartSpd") }}</div>
 					<div ref="spdChartEl" class="chart-canvas"></div>
 				</div>
 				<div class="chart-panel chart-wide">
-					<div class="chart-title">前 20 航司前缀排行</div>
+					<div class="chart-title">
+						{{ t("stats.chartPrefixTitle") }}
+					</div>
+					<p class="chart-subtitle">
+						{{ t("stats.chartPrefixSub") }}
+					</p>
 					<div ref="prefixChartEl" class="chart-canvas chart-tall"></div>
 				</div>
 			</div>
@@ -110,6 +115,7 @@
 	} from "echarts/components";
 	import { CanvasRenderer } from "echarts/renderers";
 	import { fetchFlightStats } from "../services/api";
+	import { translate, useLocaleStore } from "../i18n";
 	import { useFlightStore } from "../stores/flight";
 
 	echarts.use([
@@ -122,6 +128,8 @@
 	]);
 
 	const store = useFlightStore();
+	const localeStore = useLocaleStore();
+	const t = (path: string) => translate(localeStore.t, path);
 
 	interface StatsData {
 		total: number;
@@ -156,30 +164,37 @@
 	let refreshTimer: ReturnType<typeof setInterval> | null = null;
 	let statsLoading = false;
 
-	const ALT_LABELS: Record<string, string> = {
-		ground: "地面 ≤100ft",
-		"low_<5k": "低空 <5000ft",
-		"medium_5-25k": "中空 5000-25000ft",
-		"high_>25k": "高空 >25000ft",
-		unknown: "未知",
-	};
-
-	const SPD_LABELS: Record<string, string> = {
-		"stationary_<30kts": "静止 <30kts",
-		"slow_30-150kts": "低速 30-150kts",
-		"cruise_150-400kts": "巡航 150-400kts",
-		"fast_>400kts": "高速 >400kts",
-		unknown: "未知",
-	};
-
 	function srcLabel(src: string) {
 		const map: Record<string, string> = {
 			opensky: "OpenSky",
 			fr24: "FR24",
 			mock: "Mock",
-			other: "其他",
+			other: t("stats.srcOther"),
 		};
 		return map[src] ?? src;
+	}
+	const CHART_AXIS = { color: "#94a3b8", fontSize: 11 };
+	const CHART_LINE = { lineStyle: { color: "#475569" } };
+	const CHART_SPLIT = { lineStyle: { color: "rgba(148, 163, 184, 0.12)" } };
+
+	function valueAxisOpts() {
+		return {
+			axisLabel: CHART_AXIS,
+			axisLine: CHART_LINE,
+			splitLine: CHART_SPLIT,
+		};
+	}
+
+	function categoryAxisOpts() {
+		return {
+			axisLabel: CHART_AXIS,
+			axisLine: CHART_LINE,
+			splitLine: { show: false },
+		};
+	}
+
+	function bandLabel(key: string): string {
+		return translate(localeStore.t, `stats.bands.${key}` as never);
 	}
 
 	async function loadStats() {
@@ -207,7 +222,7 @@
 
 	function renderStatusChart() {
 		if (!statusChartEl.value) return;
-		if (!statusChart) statusChart = echarts.init(statusChartEl.value, "dark");
+		if (!statusChart) statusChart = echarts.init(statusChartEl.value);
 		statusChart.setOption({
 			backgroundColor: "transparent",
 			tooltip: { trigger: "item" },
@@ -215,7 +230,7 @@
 				bottom: 0,
 				itemWidth: 12,
 				itemHeight: 12,
-				textStyle: { fontSize: 11 },
+				textStyle: { fontSize: 11, color: "#cbd5e1" },
 			},
 			series: [
 				{
@@ -224,17 +239,22 @@
 					center: ["50%", "44%"],
 					data: [
 						{
-							name: "飞行中",
+							name: t("stats.pieAirborne"),
 							value: stats.value.airborne_count,
 							itemStyle: { color: "#2563eb" },
 						},
 						{
-							name: "在地面",
+							name: t("stats.pieGround"),
 							value: stats.value.on_ground_count,
 							itemStyle: { color: "#9ca3af" },
 						},
 					],
-					label: { show: true, formatter: "{b}\n{d}%", fontSize: 11 },
+					label: {
+						show: true,
+						formatter: "{b}\n{d}%",
+						fontSize: 11,
+						color: "#e2e8f0",
+					},
 				},
 			],
 		});
@@ -242,7 +262,7 @@
 
 	function renderAltChart() {
 		if (!altChartEl.value) return;
-		if (!altChart) altChart = echarts.init(altChartEl.value, "dark");
+		if (!altChart) altChart = echarts.init(altChartEl.value);
 		const band = stats.value.by_altitude_band;
 		const keys = ["ground", "low_<5k", "medium_5-25k", "high_>25k", "unknown"];
 		altChart.setOption({
@@ -251,10 +271,17 @@
 			grid: { left: 10, right: 10, bottom: 30, top: 16, containLabel: true },
 			xAxis: {
 				type: "category",
-				data: keys.map((k) => ALT_LABELS[k] ?? k),
-				axisLabel: { fontSize: 10, rotate: 15 },
+				data: keys.map((k) => bandLabel(k)),
+				axisLabel: { ...CHART_AXIS, rotate: 20 },
+				axisLine: CHART_LINE,
 			},
-			yAxis: { type: "value", axisLabel: { fontSize: 10 } },
+			yAxis: {
+				type: "value",
+				name: t("stats.axisCount"),
+				nameLocation: "middle",
+				nameGap: 36,
+				...valueAxisOpts(),
+			},
 			series: [
 				{
 					type: "bar",
@@ -268,7 +295,7 @@
 
 	function renderSpdChart() {
 		if (!spdChartEl.value) return;
-		if (!spdChart) spdChart = echarts.init(spdChartEl.value, "dark");
+		if (!spdChart) spdChart = echarts.init(spdChartEl.value);
 		const band = stats.value.by_speed_band;
 		const keys = [
 			"stationary_<30kts",
@@ -283,10 +310,17 @@
 			grid: { left: 10, right: 10, bottom: 30, top: 16, containLabel: true },
 			xAxis: {
 				type: "category",
-				data: keys.map((k) => SPD_LABELS[k] ?? k),
-				axisLabel: { fontSize: 10, rotate: 15 },
+				data: keys.map((k) => bandLabel(k)),
+				axisLabel: { ...CHART_AXIS, rotate: 20 },
+				axisLine: CHART_LINE,
 			},
-			yAxis: { type: "value", axisLabel: { fontSize: 10 } },
+			yAxis: {
+				type: "value",
+				name: t("stats.axisCount"),
+				nameLocation: "middle",
+				nameGap: 36,
+				...valueAxisOpts(),
+			},
 			series: [
 				{
 					type: "bar",
@@ -300,25 +334,58 @@
 
 	function renderPrefixChart() {
 		if (!prefixChartEl.value) return;
-		if (!prefixChart) prefixChart = echarts.init(prefixChartEl.value, "dark");
+		if (!prefixChart) prefixChart = echarts.init(prefixChartEl.value);
 		const top = stats.value.top_callsign_prefixes.slice(0, 20);
 		prefixChart.setOption({
 			backgroundColor: "transparent",
 			tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
-			grid: { left: 60, right: 20, bottom: 10, top: 10, containLabel: false },
-			xAxis: { type: "value", axisLabel: { fontSize: 10 } },
+			grid: {
+				left: 8,
+				right: 72,
+				bottom: 24,
+				top: 8,
+				containLabel: true,
+			},
+			xAxis: {
+				type: "value",
+				name: t("stats.axisCount"),
+				nameLocation: "middle",
+				nameGap: 28,
+				...valueAxisOpts(),
+				axisLabel: {
+					...CHART_AXIS,
+					margin: 10,
+					formatter: (v: number) =>
+						Number(v) >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v),
+				},
+			},
 			yAxis: {
 				type: "category",
+				name: t("stats.prefixAxis"),
+				nameLocation: "middle",
+				nameGap: 42,
 				data: top.map((p) => p.prefix).reverse(),
-				axisLabel: { fontSize: 11 },
+				...categoryAxisOpts(),
+				axisLabel: {
+					...CHART_AXIS,
+					width: 72,
+					overflow: "none",
+					interval: 0,
+				},
 			},
 			series: [
 				{
 					type: "bar",
 					data: top.map((p) => p.count).reverse(),
 					itemStyle: { color: "#f59e0b" },
-					barMaxWidth: 20,
-					label: { show: true, position: "right", fontSize: 10 },
+					barMaxWidth: 14,
+					barCategoryGap: "30%",
+					label: {
+						show: true,
+						position: "right",
+						fontSize: 11,
+						color: "#e2e8f0",
+					},
 				},
 			],
 		});
@@ -331,11 +398,23 @@
 		prefixChart?.resize();
 	}
 
-	// WS 推送新快照时立即刷新统计，无需等待30s轮询间隔
+	let statsFlightTimer: ReturnType<typeof setTimeout> | null = null;
+	// WS 推送时节流刷新统计，避免高频 setData 触发重复请求
 	watch(
-		() => store.flights,
+		() => store.flights.length,
 		() => {
-			loadStats();
+			if (statsFlightTimer !== null) clearTimeout(statsFlightTimer);
+			statsFlightTimer = setTimeout(() => {
+				statsFlightTimer = null;
+				void loadStats();
+			}, 4000);
+		},
+	);
+
+	watch(
+		() => localeStore.locale,
+		() => {
+			if (!loading.value) renderCharts();
 		},
 	);
 
@@ -391,16 +470,20 @@
 
 	.stats-body {
 		flex: 1;
-		padding: 20px 24px;
+		padding: 24px;
 		overflow-y: auto;
+		max-width: 1280px;
+		margin: 0 auto;
+		width: 100%;
+		box-sizing: border-box;
 	}
 
 	/* ── KPI 英雄行 */
 	.kpi-row {
 		display: flex;
-		gap: 12px;
+		gap: 24px;
 		flex-wrap: wrap;
-		margin-bottom: 20px;
+		margin-bottom: 24px;
 	}
 
 	.kpi-card {
@@ -471,10 +554,8 @@
 	}
 
 	.kpi-label {
-		font-size: 11px;
+		font-size: 12px;
 		color: var(--text-muted);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
 	}
 
 	.kpi-pct {
@@ -487,7 +568,7 @@
 	.charts-grid {
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
-		gap: 14px;
+		gap: 24px;
 	}
 
 	.chart-panel {
@@ -502,10 +583,8 @@
 	}
 
 	.chart-title {
-		font-size: 12px;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
+		font-size: 13px;
+		font-weight: 600;
 		color: var(--text-secondary);
 		margin-bottom: 10px;
 	}
@@ -515,8 +594,14 @@
 		height: 220px;
 	}
 
+	.chart-subtitle {
+		font-size: 11px;
+		color: var(--text-muted);
+		margin: -6px 0 10px;
+	}
+
 	.chart-tall {
-		height: 340px;
+		height: 560px;
 	}
 
 	@media (max-width: 900px) {

@@ -37,6 +37,14 @@ export default defineConfig(({ mode }) => {
 					secure: true,
 					...(agent ? { agent } : {}),
 				},
+				// OpenFreeMap（无 Key 兜底底图）
+				"/openfreemap-proxy": {
+					target: "https://tiles.openfreemap.org",
+					rewrite: (path) => path.replace(/^\/openfreemap-proxy/, ""),
+					changeOrigin: true,
+					secure: true,
+					...(agent ? { agent } : {}),
+				},
 			},
 		},
 	};

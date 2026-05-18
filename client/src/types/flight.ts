@@ -41,6 +41,12 @@ export interface WeatherInfo {
 export interface FlightDetail extends FlightBrief {
 	departure_airport: string | null;
 	arrival_airport: string | null;
+	departure_airport_zh?: string | null;
+	arrival_airport_zh?: string | null;
+	departure_lat?: number | null;
+	departure_lon?: number | null;
+	arrival_lat?: number | null;
+	arrival_lon?: number | null;
 	aircraft_type: string | null;
 	status: string | null;
 	dep_time?: string;
@@ -61,6 +67,10 @@ export interface PlaybackFlightPoint {
 	hdg: number | null;
 	cat: number | null;
 	cs: string | null;
+	/** 出发机场 IATA（快照写入时附带） */
+	dep?: string | null;
+	/** 到达机场 IATA */
+	arr?: string | null;
 }
 
 export interface PlaybackFrame {
@@ -105,6 +115,25 @@ export interface AirportInfo {
 	lon: number;
 	is_hub?: boolean;
 	point_type?: "hub" | "airport" | "grid" | "weather";
+	cell_min_lat?: number;
+	cell_min_lon?: number;
+	cell_max_lat?: number;
+	cell_max_lon?: number;
+}
+
+/** 5°×5° 天气网格单元（由后端根据活跃航班与天气缓存计算） */
+export interface WeatherGridCell {
+	id: string;
+	cell_min_lat: number;
+	cell_min_lon: number;
+	cell_max_lat: number;
+	cell_max_lon: number;
+	center_lat: number;
+	center_lon: number;
+	flight_count: number;
+	has_weather: boolean;
+	temperature_c?: number | null;
+	description?: string | null;
 }
 
 // 空气质量

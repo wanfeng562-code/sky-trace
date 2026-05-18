@@ -1,256 +1,70 @@
 <template>
-	<div class="layout">
-		<!-- 底图切换失败提示条 -->
+	<div class="map-layout">
 		<transition name="toast">
 			<div
 				v-if="showFallbackToast"
 				class="fallback-toast"
 				@click="showFallbackToast = false"
 			>
-				⚠️ {{ mapFallbackReason }}，已切换至备用底图（{{
-					currentProvider
-				}}）。点击关闭
+				{{ mapFallbackReason }}，已切换至备用底图（{{ currentProvider }}）。点击关闭
 			</div>
 		</transition>
 
-		<!-- 任务栏 -->
-		<header class="task-bar">
-			<div class="tb-left">
-				<button
-					:class="['tb-btn', { active: showLayerPanel }]"
-					@click="showLayerPanel = !showLayerPanel"
-					title="图层 / 底图设置"
-				>
-					<svg class="tb-icon" viewBox="0 0 20 20" fill="currentColor">
-						<path
-							d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z"
-						/>
-					</svg>
-					图层
-				</button>
-				<button
-					:class="['tb-btn', { active: store.showAqiLayer }]"
-					@click="store.showAqiLayer = !store.showAqiLayer"
-					title="AQI 空气质量"
-				>
-					<svg class="tb-icon" viewBox="0 0 20 20" fill="currentColor">
-						<path
-							fill-rule="evenodd"
-							d="M5.05 4.05a7 7 0 119.9 9.9A7 7 0 015.05 4.05zM10 14a1 1 0 100-2 1 1 0 000 2zm1-5a1 1 0 10-2 0v2a1 1 0 002 0V9z"
-							clip-rule="evenodd"
-						/>
-					</svg>
-					AQI
-				</button>
-			</div>
-			<div class="tb-center">
-				<span class="tb-stat">
-					<span class="tb-num">{{ store.flights.length }}</span>
-					<span class="tb-label">追踪</span>
-				</span>
-				<span class="tb-sep">|</span>
-				<span class="tb-stat tb-air">
-					<span class="tb-num">{{ airborneCnt }}</span>
-					<span class="tb-label">飞行中</span>
-				</span>
-				<span class="tb-sep">|</span>
-				<span class="tb-stat tb-gnd">
-					<span class="tb-num">{{ store.flights.length - airborneCnt }}</span>
-					<span class="tb-label">地面</span>
-				</span>
-			</div>
-			<div class="tb-right">
-				<button
-					:class="['tb-btn', { active: !panelCollapsed }]"
-					@click="panelCollapsed = !panelCollapsed"
-					title="切换侧栏"
-				>
-					<svg class="tb-icon" viewBox="0 0 20 20" fill="currentColor">
-						<path
-							d="M4 3a1 1 0 000 2h12a1 1 0 100-2H4zm0 4a1 1 0 000 2h8a1 1 0 100-2H4zm0 4a1 1 0 000 2h12a1 1 0 100-2H4z"
-						/>
-					</svg>
-				</button>
-			</div>
-		</header>
+		<div class="map-workspace">
+			<MapSidebar
+				v-model:collapsed="sidebarCollapsed"
+				v-model:active-tab="sidebarTab"
+				:flights="store.filteredFlights"
+				:all-flights="store.flights"
+				:airports="store.airports"
+				:selected-flight-id="store.selectedFlightId"
+				:selected-hub-iata="selectedHubIata"
+				:hub-count="hubAirportCount"
+				@select-flight="handleSelectFlight"
+				@hub-locate="handleHubLocate"
+				@hub-schedule="handleHubSchedule"
+				@hub-clear="clearHubFocus"
+				@collapse="onSidebarCollapse"
+				@layout-settled="onSidebarLayoutSettled"
+			/>
 
-		<!-- 工作区 -->
-		<div class="work-area">
-			<!-- 左：图层抽屉 -->
-			<aside :class="['layer-drawer', { open: showLayerPanel }]">
-				<div class="drawer-header">
-					<span class="drawer-title">图层与底图</span>
-					<button
-						class="drawer-close"
-						@click="showLayerPanel = false"
-						title="关闭"
-					>
-						<svg viewBox="0 0 16 16" fill="currentColor">
-							<path
-								d="M4.293 4.293a1 1 0 011.414 0L8 6.586l2.293-2.293a1 1 0 111.414 1.414L9.414 8l2.293 2.293a1 1 0 01-1.414 1.414L8 9.414l-2.293 2.293a1 1 0 01-1.414-1.414L6.586 8 4.293 5.707a1 1 0 010-1.414z"
-							/>
-						</svg>
-					</button>
-				</div>
-				<div class="drawer-body">
-					<div class="panel-section">
-						<div class="panel-title">地图来源</div>
-						<div class="style-grid">
-							<button
-								v-if="MAPTILER_KEY"
-								:class="[
-									'style-btn',
-									{ active: currentProvider === 'maptiler' },
-								]"
-								@click="switchProvider('maptiler')"
-							>
-								MapTiler
-							</button>
-							<button
-								v-if="STADIA_KEY"
-								:class="['style-btn', { active: currentProvider === 'stadia' }]"
-								@click="switchProvider('stadia')"
-							>
-								Stadia
-							</button>
-							<button
-								:class="[
-									'style-btn',
-									{ active: currentProvider === 'openfreemap' },
-								]"
-								@click="switchProvider('openfreemap')"
-							>
-								OpenFreeMap
-							</button>
-						</div>
-						<div v-if="mapFallbackActive" class="panel-note">
-							⚠️ 已自动回退到 {{ currentProvider }}
-						</div>
-					</div>
-					<div class="panel-section">
-						<div class="panel-title">底图样式</div>
-						<div class="style-grid">
-							<button
-								v-for="s in currentProviderStyles"
-								:key="s.id"
-								:class="['style-btn', { active: currentStyleId === s.id }]"
-								@click="switchStyle(s.id)"
-							>
-								{{ s.label }}
-							</button>
-						</div>
-					</div>
-					<div class="panel-section">
-						<div class="panel-title">飞机颜色</div>
-						<div class="style-grid">
-							<button
-								v-for="preset in AIRCRAFT_COLOR_PRESETS"
-								:key="preset.id"
-								:class="[
-									'style-btn',
-									{ active: aircraftColorPresetId === preset.id },
-								]"
-								@click="aircraftColorPresetId = preset.id"
-							>
-								<span
-									class="aircraft-color-chip"
-									:style="{ background: preset.fly }"
-								></span>
-								{{ preset.label }}
-							</button>
-						</div>
-						<div class="panel-note">当前：{{ currentAircraftColorLabel }}</div>
-					</div>
-					<div class="panel-section">
-						<div class="panel-title">叠加图层</div>
-						<label class="layer-toggle"
-							><input type="checkbox" v-model="store.showAqiLayer" /><span
-								>AQI 空气质量</span
-							></label
-						>
-						<label class="layer-toggle"
-							><input type="checkbox" v-model="showAqiHeatmap" /><span
-								>PM2.5 热力图</span
-							></label
-						>
-						<label class="layer-toggle"
-							><input type="checkbox" v-model="showWindLayer" /><span
-								>风速风向</span
-							></label
-						>
-						<label class="layer-toggle"
-							><input type="checkbox" v-model="showTempLayer" /><span
-								>温度分布</span
-							></label
-						>
-						<label class="layer-toggle"
-							><input type="checkbox" v-model="showDensityLayer" /><span
-								>航班密度热力图</span
-							></label
-						>
-						<label class="layer-toggle"
-							><input type="checkbox" v-model="showHubAirports" /><span
-								>枢纽机场点位</span
-							></label
-						>
-						<label class="layer-toggle"
-							><input type="checkbox" v-model="showGridPoints" /><span
-								>网格观测点（GRD）</span
-							></label
-						>
-					</div>
-					<div class="panel-section">
-						<div class="panel-title">标注语言</div>
-						<div class="label-row">
-							<span class="label-sub">行数</span>
-							<div class="style-grid">
-								<button
-									:class="['style-btn', { active: labelLines === 1 }]"
-									@click="labelLines = 1"
-								>
-									单行
-								</button>
-								<button
-									:class="['style-btn', { active: labelLines === 2 }]"
-									@click="labelLines = 2"
-								>
-									双行
-								</button>
-							</div>
-						</div>
-						<div class="label-row">
-							<span class="label-sub">{{
-								labelLines === 2 ? "第一行" : "语言"
-							}}</span>
-							<select class="lang-select" v-model="labelLine1">
-								<option
-									v-for="opt in LABEL_LANG_OPTIONS"
-									:key="opt.key"
-									:value="opt.key"
-								>
-									{{ opt.label }}
-								</option>
-							</select>
-						</div>
-						<div v-if="labelLines === 2" class="label-row">
-							<span class="label-sub">第二行</span>
-							<select class="lang-select" v-model="labelLine2">
-								<option
-									v-for="opt in LABEL_LANG_OPTIONS"
-									:key="opt.key"
-									:value="opt.key"
-								>
-									{{ opt.label }}
-								</option>
-							</select>
-						</div>
-					</div>
-				</div>
-			</aside>
-
-			<!-- 中：地图 -->
 			<div class="map-shell">
 				<div ref="mapContainer" class="map-canvas"></div>
+				<MapControlsOverlay
+					v-model:layers-open="showLayerPanel"
+					v-model:basemap-open="showBasemapPanel"
+					:map="map"
+					:map-bearing="mapBearing"
+					@zoom-in="mapZoomIn"
+					@zoom-out="mapZoomOut"
+					@reset-bearing="mapResetBearing"
+					@geolocate="mapGeolocate"
+				/>
+				<MapLayerPopover
+					v-model:open="showLayerPanel"
+					v-model:show-aqi="store.showAqiLayer"
+					v-model:show-aqi-heatmap="showAqiHeatmap"
+					v-model:show-wind="showWindLayer"
+					v-model:show-temp="showTempLayer"
+					v-model:show-density="showDensityLayer"
+					v-model:show-hubs="showHubAirports"
+					v-model:show-grid="showGridPoints"
+				/>
+				<MapBasemapPopover
+					v-model:open="showBasemapPanel"
+					:provider="currentProvider"
+					:style-id="currentStyleId"
+					:styles="currentProviderStyles"
+					:has-maptiler="!!MAPTILER_KEY"
+					:has-stadia="!!STADIA_KEY"
+					:fallback-active="mapFallbackActive"
+					v-model:label-lines="labelLines"
+					v-model:label-line1="labelLine1"
+					v-model:label-line2="labelLine2"
+					:label-options="labelLangOptions"
+					@switch-provider="switchProvider"
+					@switch-style="switchStyle"
+				/>
 				<div v-if="store.loading" class="map-status">正在加载航班数据...</div>
 				<div v-else-if="store.trackLoading" class="map-status">
 					正在加载选中航班轨迹...
@@ -260,62 +74,27 @@
 				</div>
 			</div>
 
-			<!-- 右：统一上下文面板 -->
-			<aside :class="['context-panel', { collapsed: panelCollapsed }]">
-				<div class="cp-tabs">
-					<button
-						:class="['cp-tab', { active: contextTab === 'flights' }]"
-						@click="contextTab = 'flights'"
-					>
-						航班
-						<span class="cp-badge">{{ store.filteredFlights.length }}</span>
-					</button>
-					<button
-						v-if="store.flightDetail || store.detailLoading"
-						:class="['cp-tab', { active: contextTab === 'detail' }]"
-						@click="contextTab = 'detail'"
-					>
-						详情
-					</button>
-					<button
-						v-if="store.scheduleAirport"
-						:class="['cp-tab', { active: contextTab === 'schedule' }]"
-						@click="contextTab = 'schedule'"
-					>
-						时刻
-					</button>
-				</div>
-				<div class="cp-body">
-					<FlightListPanel
-						v-show="contextTab === 'flights'"
-						:flights="store.filteredFlights"
-						:selected-flight-id="store.selectedFlightId"
-						:filter-status="store.filterStatus"
-						:filter-country="store.filterCountry"
-						:filter-country-mode="store.filterCountryMode"
-						:filter-region="store.filterRegion"
-						:ws-online="store.wsOnline"
-						@select="handleSelectFlight"
-						@search="store.searchKeyword = $event"
-						@filter="store.filterStatus = $event"
-						@filter-country="store.filterCountry = $event"
-						@filter-country-mode="store.filterCountryMode = $event"
-						@filter-region="store.filterRegion = $event"
-					/>
-					<FlightDetailCard
-						v-show="contextTab === 'detail'"
-						:detail="store.flightDetail"
-						:loading="store.detailLoading"
-						@close="handleSelectFlight(null)"
-					/>
-					<SchedulePanel v-show="contextTab === 'schedule'" />
-				</div>
-			</aside>
+			<MapContextPanel
+				v-model:active-tab="contextTab"
+				:open="contextPanelOpen"
+				:show-rail="contextPanelCollapsed && contextHasContent"
+				:rail-label="contextRailLabel"
+				:show-detail-tab="showDetailTab"
+				:show-schedule-tab="!!store.scheduleAirport"
+				:detail="store.flightDetail"
+				:detail-loading="store.detailLoading"
+				@collapse="collapseContextPanel"
+				@expand="expandContextPanel"
+				@close="closeContextPanel"
+				@layout-settled="onSidebarLayoutSettled"
+			/>
 		</div>
 	</div>
 </template>
 
 <script setup lang="ts">
+	defineOptions({ name: "MapView" });
+
 	import {
 		computed,
 		markRaw,
@@ -326,6 +105,7 @@
 		watch,
 	} from "vue";
 	import maplibregl, {
+		type FilterSpecification,
 		type GeoJSONSource,
 		type LngLatBoundsLike,
 		type Map as MapLibreMap,
@@ -334,15 +114,99 @@
 	import planeIconRaw from "../icons/plane.svg?raw";
 	import planeGroundIconRaw from "../icons/plane_ground.svg?raw";
 
-	import FlightDetailCard from "../components/FlightDetailCard.vue";
-	import FlightListPanel from "../components/FlightListPanel.vue";
-	import SchedulePanel from "../components/SchedulePanel.vue";
+	import MapBasemapPopover from "../components/map/MapBasemapPopover.vue";
+	import MapContextPanel from "../components/map/MapContextPanel.vue";
+	import MapControlsOverlay from "../components/map/MapControlsOverlay.vue";
+	import MapLayerPopover from "../components/map/MapLayerPopover.vue";
+	import MapSidebar from "../components/map/MapSidebar.vue";
+	import { translate, useLocaleStore } from "../i18n";
+	import { flyToUserLocation } from "../utils/mapGeolocateControl";
+	import {
+		AIRPORT_HIGHLIGHT_LAYER,
+		AIRPORT_HIGHLIGHT_SOURCE,
+		TRACK_HISTORY_SEG_LAYER_ID,
+		buildHistoricalTrackSegmentCollection,
+		buildPlannedRouteGeoJson,
+		buildRouteAirportHighlightCollection,
+		historicalTrackSegmentLinePaint,
+		resolveRouteAirports,
+		routeAirportHighlightPaint,
+	} from "../utils/flightTrackMap";
+	import { fetchDatahubWeather, fetchWeatherGrid } from "../services/api";
+	import { AIRCRAFT_COLOR, resolveStyleAircraftColor } from "../config/aircraftColors";
+	import {
+		HUB_CIRCLE_TIER_1,
+		HUB_LABEL_COLOR,
+		HUB_LABEL_HALO,
+		isDarkBasemapStyle,
+	} from "../config/mapVisualTheme";
+	import {
+		applyMapMarkerLabelStyles,
+		applyPremiumOverlayStyles,
+		flightHoverLabelLayout,
+		flightHoverLabelPaint,
+		flightHoverIconImageLayout,
+		flightIconImageLayout,
+		flightIconSizeLayout,
+		formatWindLabel,
+		aqiCirclePaint,
+		aqiHeatmapPaint,
+		aqiLabelLayout,
+		aqiLabelPaint,
+		flightDensityHeatmapPaint,
+		hubAirportCirclePaint,
+		hubAirportHighlightLabelLayout,
+		hubAirportLabelLayout,
+		hubAirportLabelPaint,
+		regionHighlightFillPaint,
+		regionHighlightGlowPaint,
+		regionHighlightLinePaint,
+		tempCirclePaint,
+		tempHeatmapPaint,
+		weatherGridFillPaint,
+		weatherGridMarkerLayout,
+		weatherGridMarkerPaint,
+		weatherGridOutlinePaint,
+		windArrowLayout,
+		windArrowPaint,
+		windLabelLayout,
+		windLabelPaint,
+	} from "../config/mapLayerStyles";
+	import { toHubAirportGeoJson } from "../utils/mapHubDisplay";
+	import { HIDE_ALL_FEATURES_FILTER } from "../utils/mapFilters";
+	import { ensureOverlayLayerOrder } from "../utils/mapLayerOrder";
+	import { scheduleMapUpdate, cancelScheduledMapUpdates } from "../utils/mapUpdateScheduler";
+	import {
+		patchFlightGeoJson,
+		type FlightPointFeature,
+	} from "../utils/flightGeoJson";
+	import {
+		clearFlightFeatureStates,
+		resetFlightFeatureStateTracking,
+		syncFlightHighlightStates,
+	} from "../utils/flightFeatureState";
+	import {
+		bboxFromGeometry,
+		geometryToFeature,
+		resolveRegionBoundaryGeometry,
+	} from "../utils/regionBoundaries";
+	import {
+		buildOpenFreeMapStyleUrl,
+		isOpenFreeMapPlaceLabelLayer,
+		OPENFREEMAP_LABEL_FONTS,
+		rewriteMapResourceUrl,
+	} from "../utils/mapBasemap";
+	import {
+		computeWeatherGridFromFlights,
+		enrichCellsWithGrdWeather,
+	} from "../utils/weatherGrid";
 	import { useFlightStore } from "../stores/flight";
 	import { COUNTRIES } from "../data/countries";
 	import type {
 		AirportInfo,
 		AirQualityHub,
 		FlightBrief,
+		WeatherGridCell,
 	} from "../types/flight";
 
 	// ── API keys from .env ───────────────────────────────────────────────────────
@@ -364,92 +228,22 @@
 		(import.meta.env.VITE_MAP_INIT_ZOOM as string) || "4",
 	);
 
-	// ── Basemap style catalogues ─────────────────────────────────────────────────
-	const MAPTILER_STYLES = [
-		{ id: "streets-v2-dark", label: "街道深色" },
-		{ id: "streets-v2", label: "街道浅色" },
-		{ id: "outdoor-v2", label: "户外地形" },
-		{ id: "hybrid", label: "卫星影像" },
-		{ id: "dataviz-dark", label: "数据深色" },
-		{ id: "dataviz", label: "数据浅色" },
-	];
-	const STADIA_STYLES = [
-		{ id: "alidade_smooth_dark", label: "深色平滑" },
-		{ id: "alidade_smooth", label: "浅色平滑" },
-		{ id: "stamen_terrain", label: "地形图" },
-		{ id: "alidade_satellite", label: "卫星影像" },
-	];
-	const OPENFREEMAP_STYLES = [
-		{ id: "liberty", label: "自然风格" },
-		{ id: "bright", label: "明亮风格" },
-		{ id: "positron", label: "简洁浅色" },
-	];
-
-	// ── Aircraft icon color scheme per map style ──────────────────────────────────
-	// fly: flying aircraft fill color; ground: taxiing/parked aircraft fill color
-	const STYLE_ICON_COLORS: Record<string, { fly: string; ground: string }> = {
-		// MapTiler
-		"streets-v2-dark": { fly: "#22d3ee", ground: "#e2e8f0" },
-		"streets-v2": { fly: "#1d4ed8", ground: "#334155" },
-		"outdoor-v2": { fly: "#b45309", ground: "#374151" },
-		hybrid: { fly: "#f59e0b", ground: "#e2e8f0" },
-		satellite: { fly: "#f59e0b", ground: "#e2e8f0" },
-		"dataviz-dark": { fly: "#f97316", ground: "#cbd5e1" },
-		dataviz: { fly: "#be123c", ground: "#334155" },
-		// Backward compatibility for old id used in previous versions
-		"satellite-hybrid": { fly: "#f59e0b", ground: "#e2e8f0" },
-		// Stadia
-		alidade_smooth_dark: { fly: "#34d399", ground: "#e2e8f0" },
-		alidade_smooth: { fly: "#1e40af", ground: "#334155" },
-		stamen_terrain: { fly: "#0f766e", ground: "#374151" },
-		alidade_satellite: { fly: "#f59e0b", ground: "#e2e8f0" },
-		// OpenFreeMap
-		liberty: { fly: "#7c3aed", ground: "#334155" },
-		bright: { fly: "#0f766e", ground: "#374151" },
-		positron: { fly: "#111827", ground: "#4b5563" },
-	};
-	/** Default colors used when style ID is not in the table */
-	const DEFAULT_ICON_COLORS = { fly: "#f59e0b", ground: "#e2e8f0" };
-
-	const AIRCRAFT_COLOR_PRESETS = [
-		{ id: "auto", label: "自动", fly: "#60a5fa", ground: "#94a3b8" },
-		{ id: "ocean-blue", label: "海洋蓝", fly: "#60a5fa", ground: "#94a3b8" },
-		{
-			id: "yellow",
-			label: "荧光黄 #FFFF00",
-			fly: "#FFFF00",
-			ground: "#f1f5f9",
-		},
-		{ id: "lime", label: "亮明黄 #CCFF00", fly: "#CCFF00", ground: "#e2e8f0" },
-		{ id: "white", label: "纯白 #FFFFFF", fly: "#FFFFFF", ground: "#e2e8f0" },
-		{ id: "ice", label: "浅冰白 #F8FAFC", fly: "#F8FAFC", ground: "#cbd5e1" },
-		{
-			id: "orangered",
-			label: "橙红 #FF4500",
-			fly: "#FF4500",
-			ground: "#f1f5f9",
-		},
-		{ id: "coral", label: "珊瑚红 #FF7F50", fly: "#FF7F50", ground: "#e2e8f0" },
-		{
-			id: "deep-blue",
-			label: "深海蓝 #1A237E（专业商务风）",
-			fly: "#1A237E",
-			ground: "#e2e8f0",
-		},
-		{
-			id: "charcoal",
-			label: "深炭灰 #333333（极致清晰）",
-			fly: "#333333",
-			ground: "#f1f5f9",
-		},
-		{
-			id: "jade-green",
-			label: "翡翠绿 #2E7D32（清新自然风）",
-			fly: "#2E7D32",
-			ground: "#e2e8f0",
-		},
+	// ── Basemap style catalogues（文案走 i18n mapStyles.*）────────────────────────
+	const MAPTILER_STYLE_IDS = [
+		"streets-v2-dark",
+		"streets-v2",
+		"outdoor-v2",
+		"hybrid",
+		"dataviz-dark",
+		"dataviz",
 	] as const;
-	type AircraftColorPresetId = (typeof AIRCRAFT_COLOR_PRESETS)[number]["id"];
+	const STADIA_STYLE_IDS = [
+		"alidade_smooth_dark",
+		"alidade_smooth",
+		"stamen_terrain",
+		"alidade_satellite",
+	] as const;
+	const OPENFREEMAP_STYLE_IDS = ["liberty", "bright", "positron"] as const;
 
 	const MAPTILER_STYLE_ALIASES: Record<string, string> = {
 		"satellite-hybrid": "hybrid",
@@ -459,35 +253,40 @@
 		return MAPTILER_STYLE_ALIASES[styleId] ?? styleId;
 	}
 
-	// ── Label language settings ────────────────────────────────────────────────────
-	const LABEL_LANG_OPTIONS = [
-		{ key: "name:en", label: "英语" },
-		{ key: "name:zh-Hans", label: "简体中文" },
-		{ key: "name:zh-Hant", label: "繁体中文" },
-		{ key: "name:ja", label: "日语" },
-		{ key: "name:ko", label: "한국어" },
-		{ key: "name", label: "本地名称" },
+	const LABEL_LANG_KEYS = [
+		"name:en",
+		"name:zh-Hans",
+		"name:zh-Hant",
+		"name:ja",
+		"name:ko",
+		"name",
 	] as const;
 
 	const MAP_SOURCE_ID = "flights";
 	const MAP_LAYER_ID = "flight-points";
+	const MAP_FLIGHT_HOVER_ICON_LAYER_ID = "flight-hover-icon";
+	const MAP_HOVER_SOURCE_ID = "flight-hover-tip";
+	const MAP_HOVER_LABEL_LAYER_ID = "flight-hover-label";
 	const MAP_SELECTED_LAYER_ID = "selected-flight-point";
-	const MAP_TRACK_SOURCE_ID = "selected-flight-track";
-	const MAP_TRACK_LAYER_ID = "selected-flight-track-line";
+	const MAP_MARKED_LAYER_ID = "marked-flight-ring";
+	const MAP_TRACK_SEG_SOURCE_ID = "flight-track-history-segments";
 	const MAP_AIRPORT_SOURCE_ID = "airports";
 	const MAP_AIRPORT_LAYER_ID = "airport-points";
 	const MAP_AIRPORT_LABEL_LAYER_ID = "airport-labels";
-	const MAP_GRID_LAYER_ID = "grid-observation-points";
-	const MAP_GRID_LABEL_LAYER_ID = "grid-observation-labels";
-	const MAP_AIRPORT_HIGHLIGHT_SOURCE_ID = "airports-highlight";
-	const MAP_AIRPORT_HIGHLIGHT_LAYER_ID = "airport-highlight-points";
-	const MAP_AIRPORT_HIGHLIGHT_LABEL_ID = "airport-highlight-labels";
+	const MAP_GRID_SOURCE_ID = "weather-grid-cells";
+	const MAP_GRID_POINTS_SOURCE_ID = "weather-grid-centers";
+	const MAP_GRID_FILL_LAYER_ID = "weather-grid-fill";
+	const MAP_GRID_LINE_LAYER_ID = "weather-grid-outline";
+	const MAP_GRID_MARKER_LAYER_ID = "weather-grid-markers";
+	const MAP_AIRPORT_HIGHLIGHT_SOURCE_ID = AIRPORT_HIGHLIGHT_SOURCE;
+	const MAP_AIRPORT_HIGHLIGHT_LAYER_ID = AIRPORT_HIGHLIGHT_LAYER;
+	const MAP_AIRPORT_HIGHLIGHT_LABEL_ID = "airport-route-highlight-labels";
 	const MAP_AQI_SOURCE_ID = "aqi-hubs";
 	const MAP_AQI_LAYER_ID = "aqi-circles";
 	const MAP_AQI_LABEL_LAYER_ID = "aqi-labels";
+	/** 剩余航程：source / layer 分离（与早期可工作版本一致） */
 	const MAP_ROUTE_SOURCE_ID = "planned-route";
 	const MAP_ROUTE_LAYER_ID = "planned-route-line";
-	const MAP_TRACK_ARROW_LAYER_ID = "selected-flight-track-arrows";
 
 	// New enhanced layer IDs
 	const MAP_AQI_HEATMAP_LAYER_ID = "aqi-heatmap";
@@ -495,6 +294,7 @@
 	const MAP_WIND_ARROW_LAYER_ID = "wind-arrows";
 	const MAP_WIND_LABEL_LAYER_ID = "wind-speed-labels";
 	const MAP_TEMP_LAYER_ID = "temp-circles";
+	const MAP_TEMP_HEATMAP_LAYER_ID = "temp-heatmap";
 	const MAP_DENSITY_LAYER_ID = "flight-density";
 	// Region filter highlight layers
 	const MAP_REGION_HIGHLIGHT_SOURCE = "region-highlight";
@@ -502,11 +302,36 @@
 	const MAP_REGION_HIGHLIGHT_GLOW_ID = "region-highlight-glow";
 	const MAP_REGION_HIGHLIGHT_LINE_ID = "region-highlight-line";
 
-	/** AQI 等级颜色：1=优良, 2=良好, 3=轻度污染, 4=中度污染, 5=重度污染 */
-	const AQI_COLORS = ["#00e400", "#ffff00", "#ff7e00", "#ff0000", "#8f3f97"];
-
 	// ── State ────────────────────────────────────────────────────────────────────
 	const store = useFlightStore();
+	const localeStore = useLocaleStore();
+
+	function mapStyleLabel(provider: MapProvider, styleId: string): string {
+		const dict = localeStore.t;
+		if (provider === "maptiler") {
+			return translate(dict, `mapStyles.maptiler.${styleId}`);
+		}
+		if (provider === "stadia") {
+			return translate(dict, `mapStyles.stadia.${styleId}`);
+		}
+		return translate(dict, `mapStyles.openfreemap.${styleId}`);
+	}
+
+	const labelLangOptions = computed(() =>
+		LABEL_LANG_KEYS.map((key) => ({
+			key,
+			label: translate(localeStore.t, `mapLabelField.${key}`),
+		})),
+	);
+
+	function pickStyleId<T extends readonly string[]>(
+		ids: T,
+		want: string,
+	): T[number] {
+		return (ids as readonly string[]).includes(want)
+			? (want as T[number])
+			: ids[0];
+	}
 	const mapContainer = ref<HTMLElement | null>(null);
 	const map = ref<MapLibreMap | null>(null);
 	const hasFittedInitialBounds = ref(false);
@@ -519,27 +344,127 @@
 	const showFallbackToast = ref(false);
 
 	const showLayerPanel = ref(false);
+	const showBasemapPanel = ref(false);
+	const mapBearing = ref(0);
 
-	/** 右侧上下文面板状态 */
-	const contextTab = ref<"flights" | "detail" | "schedule">("flights");
-	const panelCollapsed = ref(false);
-	const airborneCnt = computed(
-		() => store.flights.filter((f) => (f.altitude_ft ?? 0) > 100).length,
+	function syncMapBearing() {
+		mapBearing.value = map.value?.getBearing() ?? 0;
+	}
+
+	function mapZoomIn() {
+		map.value?.zoomIn({ duration: 200 });
+	}
+	function mapZoomOut() {
+		map.value?.zoomOut({ duration: 200 });
+	}
+	function mapResetBearing() {
+		map.value?.easeTo({ bearing: 0, pitch: 0, duration: 400 });
+	}
+	function mapGeolocate() {
+		if (map.value) void flyToUserLocation(map.value);
+	}
+
+	watch(showLayerPanel, (open) => {
+		if (open) showBasemapPanel.value = false;
+	});
+	watch(showBasemapPanel, (open) => {
+		if (open) showLayerPanel.value = false;
+	});
+	const sidebarCollapsed = ref(false);
+	const sidebarTab = ref<"flights" | "filters" | "hubs" | "marked">("flights");
+	const contextTab = ref<"detail" | "schedule">("detail");
+	const contextPanelCollapsed = ref(false);
+	const selectedHubIata = ref<string | null>(null);
+
+	const hubAirportCount = computed(() => {
+		return store.airports.filter((a) => {
+			const pt =
+				a.point_type ?? (a.iata?.startsWith("GRD_") ? "grid" : "hub");
+			if (pt === "grid") return false;
+			return a.is_hub === true || pt === "hub";
+		}).length;
+	});
+
+	const showDetailTab = computed(
+		() => !!(store.flightDetail || store.detailLoading),
 	);
+
+	const contextHasContent = computed(
+		() =>
+			!!store.selectedFlightId ||
+			store.detailLoading ||
+			!!store.scheduleAirport,
+	);
+
+	const contextPanelOpen = computed(
+		() => !contextPanelCollapsed.value && contextHasContent.value,
+	);
+
+	const contextRailLabel = computed(() => {
+		if (store.selectedFlight) {
+			return (
+				store.selectedFlight.callsign?.trim() ||
+				store.selectedFlight.flight_id
+			);
+		}
+		if (store.scheduleAirport) return store.scheduleAirport;
+		return "";
+	});
+
+	function resizeMapCanvas() {
+		map.value?.resize();
+	}
+
+	function onSidebarCollapse() {
+		requestAnimationFrame(resizeMapCanvas);
+	}
+
+	function onSidebarLayoutSettled() {
+		resizeMapCanvas();
+	}
+
+	function clearHubFocus() {
+		selectedHubIata.value = null;
+		if (store.scheduleAirport) {
+			store.scheduleAirport = null;
+			store.scheduleEntries = [];
+		}
+		updateAirportHighlight();
+		syncHubHighlightVisibility();
+	}
+
+	function collapseContextPanel() {
+		contextPanelCollapsed.value = true;
+		syncContextPanel();
+	}
+
+	function expandContextPanel() {
+		contextPanelCollapsed.value = false;
+		syncContextPanel();
+	}
+
+	function closeContextPanel() {
+		contextPanelCollapsed.value = true;
+		clearHubFocus();
+		void handleSelectFlight(null);
+	}
+
+	function syncContextPanel() {
+		if (!contextPanelOpen.value) return;
+		void nextTick(() => {
+			setTimeout(() => map.value?.resize(), 220);
+		});
+	}
 	const showAqiHeatmap = ref(false);
 	const showWindLayer = ref(false);
 	const showTempLayer = ref(false);
 	const showDensityLayer = ref(false);
 	const showHubAirports = ref(true);
 	const showGridPoints = ref(false);
-	const aircraftColorPresetId = ref<AircraftColorPresetId>("auto");
-	const currentAircraftColorLabel = computed(() => {
-		return (
-			AIRCRAFT_COLOR_PRESETS.find((p) => p.id === aircraftColorPresetId.value)
-				?.label ?? "自动"
-		);
-	});
-
+	const weatherGridCells = ref<WeatherGridCell[]>([]);
+	let _gridRefreshTimer: ReturnType<typeof setInterval> | null = null;
+	let _gridFlightRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+	let gridPopup: maplibregl.Popup | null = null;
 	// ── Label language settings ───────────────────────────────────────────────────
 	const labelLines = ref<1 | 2>(2);
 	const labelLine1 = ref("name:en");
@@ -556,32 +481,37 @@
 		description: string | null;
 	}
 	const weatherHubs = ref<WeatherHubEntry[]>([]);
+	let hoveredFlightId: string | null = null;
+	let flightHoverHandlersBound = false;
+	let overlayOrderIdlePending = false;
 
 	/** 防抖计时器：避免 WS 快照连续触发时每次都重建 GeoJSON */
 	let _flightUpdateTimer: ReturnType<typeof setTimeout> | null = null;
+	let flightFeatureIndex: Map<string, FlightPointFeature> | null = null;
 
-	/** 飞机颜色更新防抖计时器 */
-	let _aircraftColorUpdateTimer: ReturnType<typeof setTimeout> | null = null;
+	const FEATURE_STATE_SELECTED: FilterSpecification = [
+		"==",
+		["feature-state", "selected"],
+		true,
+	];
+	const FEATURE_STATE_MARKED: FilterSpecification = [
+		"==",
+		["feature-state", "marked"],
+		true,
+	];
+	const FEATURE_STATE_HOVER: FilterSpecification = [
+		"==",
+		["feature-state", "hover"],
+		true,
+	];
 
 	/** 底图切换串行队列：避免短时间多次 setStyle 造成并发抖动 */
 	let _styleSwitching = false;
 	let _pendingStyleSwitch: { url: string; styleId: string } | null = null;
 
 	function resolveAircraftIconColors(): { fly: string; ground: string } {
-		const styleColors =
-			STYLE_ICON_COLORS[currentStyleId.value] ?? DEFAULT_ICON_COLORS;
-		if (aircraftColorPresetId.value === "auto") {
-			return styleColors;
-		}
-		const preset = AIRCRAFT_COLOR_PRESETS.find(
-			(p) => p.id === aircraftColorPresetId.value,
-		);
-		if (!preset) return styleColors;
-		return {
-			fly: preset.fly,
-			// 手动预设下，地面飞机与空中飞机同步换色
-			ground: preset.fly,
-		};
+		const color = resolveStyleAircraftColor(currentStyleId.value);
+		return { fly: color, ground: color };
 	}
 
 	async function applyStyleWithQueue(url: string, styleId: string) {
@@ -595,6 +525,11 @@
 		map.value.once("style.load", async () => {
 			try {
 				await reinitLayers(map.value!);
+				updateFlightLayer(flightsForMap());
+				updateSelectedFlightHighlight();
+				updateTrackLayer();
+				updateRouteLayer();
+				updateAirportHighlight();
 			} finally {
 				_styleSwitching = false;
 				if (_pendingStyleSwitch) {
@@ -609,6 +544,7 @@
 
 	async function refreshAircraftIcons(mapInstance: MapLibreMap) {
 		const colors = resolveAircraftIconColors();
+		const coral = AIRCRAFT_COLOR.coral;
 		try {
 			await Promise.all([
 				loadColoredSvgIcon(mapInstance, "icon-plane", planeIconRaw, colors.fly),
@@ -618,11 +554,23 @@
 					planeGroundIconRaw,
 					colors.ground,
 				),
+				loadColoredSvgIcon(
+					mapInstance,
+					"icon-plane-coral",
+					planeIconRaw,
+					coral,
+				),
+				loadColoredSvgIcon(
+					mapInstance,
+					"icon-plane-ground-coral",
+					planeGroundIconRaw,
+					coral,
+				),
 			]);
 			console.debug(
 				"[Aircraft Icon] updated",
 				colors,
-				aircraftColorPresetId.value,
+				currentStyleId.value,
 			);
 		} catch (err) {
 			console.error("[Aircraft Icon] refresh failed", err);
@@ -637,15 +585,26 @@
 	function buildStadiaStyleUrl(styleId: string): string {
 		return `/stadia-proxy/styles/${styleId}/style.json${STADIA_KEY ? `?api_key=${STADIA_KEY}` : ""}`;
 	}
-	function buildOpenFreeMapStyleUrl(styleId: string): string {
-		return `https://tiles.openfreemap.org/styles/${styleId}`;
-	}
 
 	/** Computed list of styles for the currently active provider. */
 	const currentProviderStyles = computed(() => {
-		if (currentProvider.value === "maptiler") return MAPTILER_STYLES;
-		if (currentProvider.value === "stadia") return STADIA_STYLES;
-		return OPENFREEMAP_STYLES;
+		const p = currentProvider.value;
+		if (p === "maptiler") {
+			return MAPTILER_STYLE_IDS.map((id) => ({
+				id,
+				label: mapStyleLabel("maptiler", id),
+			}));
+		}
+		if (p === "stadia") {
+			return STADIA_STYLE_IDS.map((id) => ({
+				id,
+				label: mapStyleLabel("stadia", id),
+			}));
+		}
+		return OPENFREEMAP_STYLE_IDS.map((id) => ({
+			id,
+			label: mapStyleLabel("openfreemap", id),
+		}));
 	});
 
 	/**
@@ -664,20 +623,18 @@
 		// ── Try the configured provider first ───────────────────────────────
 		if (wantProvider === "openfreemap") {
 			const s =
-				OPENFREEMAP_STYLES.find((x) => x.id === wantStyle) ||
-				OPENFREEMAP_STYLES[0];
+				OPENFREEMAP_STYLE_IDS.find((x) => x === wantStyle) ??
+				OPENFREEMAP_STYLE_IDS[0];
 			return {
-				url: buildOpenFreeMapStyleUrl(s.id),
+				url: buildOpenFreeMapStyleUrl(s),
 				provider: "openfreemap",
-				styleId: s.id,
+				styleId: s,
 			};
 		}
 
 		if (wantProvider === "maptiler" && MAPTILER_KEY) {
 			const wantStyleNormalized = normalizeMaptilerStyleId(wantStyle);
-			const styleId =
-				MAPTILER_STYLES.find((x) => x.id === wantStyleNormalized)?.id ||
-				MAPTILER_STYLES[0].id;
+			const styleId = pickStyleId(MAPTILER_STYLE_IDS, wantStyleNormalized);
 			try {
 				const resp = await fetch(buildMaptilerStyleUrl(styleId));
 				if (resp.ok) {
@@ -696,9 +653,7 @@
 		}
 
 		if (wantProvider === "stadia" && STADIA_KEY) {
-			const styleId =
-				STADIA_STYLES.find((x) => x.id === wantStyle)?.id ||
-				STADIA_STYLES[0].id;
+			const styleId = pickStyleId(STADIA_STYLE_IDS, wantStyle);
 			return {
 				url: buildStadiaStyleUrl(styleId),
 				provider: "stadia",
@@ -708,7 +663,7 @@
 
 		// ── Fallback chain ───────────────────────────────────────────────────
 		if (wantProvider !== "maptiler" && MAPTILER_KEY) {
-			const styleId = MAPTILER_STYLES[0].id;
+			const styleId = MAPTILER_STYLE_IDS[0];
 			try {
 				const resp = await fetch(buildMaptilerStyleUrl(styleId));
 				if (resp.ok) {
@@ -726,7 +681,7 @@
 		}
 
 		if (STADIA_KEY) {
-			const styleId = STADIA_STYLES[0].id;
+			const styleId = STADIA_STYLE_IDS[0];
 			if (wantProvider !== "stadia") {
 				mapFallbackActive.value = true;
 				mapFallbackReason.value = "已回退至 Stadia Maps";
@@ -734,11 +689,11 @@
 			return { url: buildStadiaStyleUrl(styleId), provider: "stadia", styleId };
 		}
 
-		const s = OPENFREEMAP_STYLES[0];
+		const s = OPENFREEMAP_STYLE_IDS[0];
 		return {
-			url: buildOpenFreeMapStyleUrl(s.id),
+			url: buildOpenFreeMapStyleUrl(s),
 			provider: "openfreemap",
-			styleId: s.id,
+			styleId: s,
 		};
 	}
 
@@ -755,24 +710,7 @@
 	 * the worker can fetch as same-origin requests.
 	 */
 	function transformRequest(url: string): { url: string } {
-		const origin = window.location.origin;
-		if (url.startsWith("https://api.maptiler.com")) {
-			return {
-				url: url.replace(
-					"https://api.maptiler.com",
-					`${origin}/maptiler-proxy`,
-				),
-			};
-		}
-		if (url.startsWith("https://tiles.stadiamaps.com")) {
-			return {
-				url: url.replace(
-					"https://tiles.stadiamaps.com",
-					`${origin}/stadia-proxy`,
-				),
-			};
-		}
-		return { url };
+		return { url: rewriteMapResourceUrl(url) };
 	}
 
 	/**
@@ -815,7 +753,18 @@
 		await refreshAircraftIcons(mapInstance);
 
 		addCustomLayers(mapInstance);
-		updateRegionHighlight(store.filterCountry, store.filterRegion);
+		scheduleOverlayLayerOrder(mapInstance);
+		syncEnvironmentalOverlayMode();
+		updateHubAirportLayer();
+		void applyRegionFilterHighlight(
+			store.filterCountry,
+			store.filterRegion,
+			store.filterCity,
+			store.filterDistrict,
+		);
+		if (showGridPoints.value) {
+			void refreshWeatherGrid(false);
+		}
 	}
 
 	/**
@@ -849,20 +798,15 @@
 		let sid: string;
 		if (provider === "maptiler") {
 			const defaultStyle = normalizeMaptilerStyleId(MAP_DEFAULT_STYLE);
-			sid =
-				styleId ||
-				MAPTILER_STYLES.find((s) => s.id === defaultStyle)?.id ||
-				MAPTILER_STYLES[0].id;
-			sid = normalizeMaptilerStyleId(sid);
+			sid = normalizeMaptilerStyleId(
+				styleId || pickStyleId(MAPTILER_STYLE_IDS, defaultStyle),
+			);
 			url = buildMaptilerStyleUrl(sid);
 		} else if (provider === "stadia") {
-			sid = styleId || STADIA_STYLES[0].id;
+			sid = styleId || STADIA_STYLE_IDS[0];
 			url = buildStadiaStyleUrl(sid);
 		} else {
-			const s =
-				OPENFREEMAP_STYLES.find((x) => x.id === styleId) ||
-				OPENFREEMAP_STYLES[0];
-			sid = s.id;
+			sid = pickStyleId(OPENFREEMAP_STYLE_IDS, styleId ?? "");
 			url = buildOpenFreeMapStyleUrl(sid);
 		}
 		currentStyleId.value = sid;
@@ -872,30 +816,27 @@
 	// ── Weather hub fetch (for wind/temp layers) ─────────────────────────────────
 	async function loadWeatherHubs() {
 		try {
-			const apiBase = import.meta.env.VITE_API_BASE_URL as string;
-			const resp = await fetch(`${apiBase}/datahub/weather`);
-			if (!resp.ok) return;
-			const json = await resp.json();
-			if (json.data) {
-				weatherHubs.value = Object.entries(json.data)
-					.filter(([iata]) => !iata.startsWith("GRD_"))
-					.map(([iata, w]: [string, unknown]) => {
-						const entry = w as Record<string, unknown>;
-						const wind = (entry.wind ?? {}) as Record<string, unknown>;
-						const weather = (entry.weather ?? {}) as Record<string, unknown>;
-						return {
-							iata,
-							lat: entry.lat as number,
-							lon: entry.lon as number,
-							wind_speed_mps: (wind.speed as number | null) ?? null,
-							wind_deg: (wind.deg as number | null) ?? null,
-							temperature_c: (entry.temperature_c as number | null) ?? null,
-							humidity: (entry.humidity as number | null) ?? null,
-							description: (weather.description as string | null) ?? null,
-						};
-					})
-					.filter((h) => h.lat && h.lon);
-				void store.loadAirports(true);
+			const weatherData = await fetchDatahubWeather(false);
+			weatherHubs.value = Object.entries(weatherData)
+				.filter(([iata]) => !iata.startsWith("GRD_"))
+				.map(([iata, w]) => {
+					const entry = w as Record<string, unknown>;
+					const wind = (entry.wind ?? {}) as Record<string, unknown>;
+					const weather = (entry.weather ?? {}) as Record<string, unknown>;
+					return {
+						iata,
+						lat: entry.lat as number,
+						lon: entry.lon as number,
+						wind_speed_mps: (wind.speed as number | null) ?? null,
+						wind_deg: (wind.deg as number | null) ?? null,
+						temperature_c: (entry.temperature_c as number | null) ?? null,
+						humidity: (entry.humidity as number | null) ?? null,
+						description: (weather.description as string | null) ?? null,
+					};
+				})
+				.filter((h) => h.lat && h.lon);
+			if (showGridPoints.value) {
+				void refreshWeatherGrid(false);
 			}
 		} catch (e) {
 			console.warn("[WeatherHubs] fetch failed", e);
@@ -905,18 +846,27 @@
 	function toWeatherGeoJson(): GeoJSON.FeatureCollection<GeoJSON.Point> {
 		return {
 			type: "FeatureCollection",
-			features: weatherHubs.value.map((h) => ({
-				type: "Feature",
-				geometry: { type: "Point", coordinates: [h.lon, h.lat] },
-				properties: {
-					iata: h.iata,
-					wind_speed_mps: h.wind_speed_mps ?? 0,
-					wind_deg: h.wind_deg ?? 0,
-					temperature_c: h.temperature_c ?? 0,
-					humidity: h.humidity ?? 0,
-					description: h.description ?? "",
-				},
-			})),
+			features: weatherHubs.value.map((h) => {
+				const wind_speed_mps = h.wind_speed_mps ?? null;
+				const wind_deg = h.wind_deg ?? null;
+				return {
+					type: "Feature",
+					geometry: { type: "Point", coordinates: [h.lon, h.lat] },
+					properties: {
+						iata: h.iata,
+						wind_speed_mps: wind_speed_mps ?? 0,
+						wind_deg: wind_deg ?? 0,
+						wind_label: formatWindLabel({
+							iata: h.iata,
+							wind_speed_mps,
+							wind_deg,
+						}),
+						temperature_c: h.temperature_c ?? 0,
+						humidity: h.humidity ?? 0,
+						description: h.description ?? "",
+					},
+				};
+			}),
 		};
 	}
 
@@ -938,15 +888,78 @@
 		);
 	}
 
+	/** 开启环境叠加层时压低飞机不透明度，让热力/场图层可见（对齐 FR24/FA） */
+	function hasFieldOverlay(): boolean {
+		return (
+			store.showAqiLayer ||
+			showAqiHeatmap.value ||
+			showTempLayer.value ||
+			showDensityLayer.value
+		);
+	}
+
+	function syncEnvironmentalOverlayMode() {
+		const mapInstance = map.value;
+		if (!mapInstance?.getLayer(MAP_LAYER_ID)) return;
+		const fieldOn = hasFieldOverlay();
+		const dim = fieldOn || showGridPoints.value;
+		mapInstance.setPaintProperty(
+			MAP_LAYER_ID,
+			"icon-opacity",
+			fieldOn ? 0.22 : dim ? 0.45 : 1,
+		);
+		if (mapInstance.getLayer("flight-altitude-glow")) {
+			mapInstance.setPaintProperty(
+				"flight-altitude-glow",
+				"circle-opacity",
+				fieldOn ? 0 : dim ? 0.08 : 0.22,
+			);
+		}
+	}
+
+	function syncHubHighlightVisibility() {
+		if (!map.value) return;
+		const hubActive =
+			!!selectedHubIata.value &&
+			(showHubAirports.value || !!store.scheduleAirport);
+		const flightActive = !!(
+			store.flightDetail?.departure_airport ||
+			store.flightDetail?.arrival_airport
+		);
+		const vis = hubActive || flightActive;
+		setLayerVisibility(MAP_AIRPORT_HIGHLIGHT_LAYER_ID, vis);
+		setLayerVisibility(MAP_AIRPORT_HIGHLIGHT_LABEL_ID, vis);
+	}
+
 	async function handleSelectFlight(flightId: string | null) {
 		await store.selectFlight(flightId);
 		store.loadFlightDetail(flightId);
 		if (flightId) {
-			panelCollapsed.value = false;
+			contextPanelCollapsed.value = false;
 			contextTab.value = "detail";
-		} else {
-			contextTab.value = "flights";
+			syncContextPanel();
 		}
+	}
+
+	function handleHubLocate(iata: string) {
+		selectedHubIata.value = iata;
+		const ap = store.airports.find((a) => a.iata === iata);
+		if (!ap || !map.value) return;
+		map.value.flyTo({
+			center: [ap.lon, ap.lat],
+			zoom: Math.max(map.value.getZoom(), 7),
+			essential: true,
+		});
+		updateAirportHighlight();
+	}
+
+	async function handleHubSchedule(iata: string) {
+		selectedHubIata.value = iata;
+		await store.loadSchedules(iata, "dep");
+		contextPanelCollapsed.value = false;
+		contextTab.value = "schedule";
+		syncContextPanel();
+		updateAirportHighlight();
 	}
 
 	function toAirQualityGeoJson(
@@ -977,101 +990,404 @@
 	): GeoJSON.FeatureCollection<GeoJSON.Point> {
 		return {
 			type: "FeatureCollection",
-			features: list.map((a) => {
-				const pointType =
-					a.point_type ?? (a.iata?.startsWith("GRD_") ? "grid" : "hub");
-				return {
-					type: "Feature",
-					geometry: { type: "Point", coordinates: [a.lon, a.lat] },
-					properties: {
-						iata: a.iata,
-						name: a.name,
-						point_type: pointType,
-						is_hub: a.is_hub ?? pointType === "hub",
-					},
-				};
-			}),
+			features: list
+				.filter((a) => {
+					const pointType =
+						a.point_type ?? (a.iata?.startsWith("GRD_") ? "grid" : "hub");
+					return pointType !== "grid";
+				})
+				.map((a) => {
+					const pointType =
+						a.point_type ?? (a.iata?.startsWith("GRD_") ? "grid" : "hub");
+					return {
+						type: "Feature",
+						geometry: { type: "Point", coordinates: [a.lon, a.lat] },
+						properties: {
+							iata: a.iata,
+							name: a.name,
+							point_type: pointType,
+							is_hub: a.is_hub ?? pointType === "hub",
+						},
+					};
+				}),
 		};
 	}
 
-	function updateAirportHighlight() {
+	let hubZoomListenerBound = false;
+	let _hubZoomTimer: ReturnType<typeof setTimeout> | null = null;
+	let _labelApplyTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function updateHubAirportLayer() {
 		if (!map.value) return;
-		const detail = store.flightDetail;
-		const depIata = detail?.departure_airport ?? null;
-		const arrIata = detail?.arrival_airport ?? null;
-		const highlighted = store.airports.filter(
-			(a) => a.iata === depIata || a.iata === arrIata,
-		);
-		const src = map.value.getSource(MAP_AIRPORT_HIGHLIGHT_SOURCE_ID) as
+		const zoom = map.value.getZoom();
+		const src = map.value.getSource(MAP_AIRPORT_SOURCE_ID) as
 			| GeoJSONSource
 			| undefined;
-		src?.setData(toAirportGeoJson(highlighted));
+		src?.setData(
+			toHubAirportGeoJson(store.airports, store.flights, zoom),
+		);
+		scheduleOverlayLayerOrder(map.value);
+		applyMapMarkerLabelStyles(map.value);
 	}
 
-	function toGeoJson(
-		flights: FlightBrief[],
+	function flightsForMap(): FlightBrief[] {
+		if (!store.filtersActive) return store.flights;
+		const ids = new Set<string>();
+		for (const f of store.filteredFlights) ids.add(f.flight_id);
+		if (store.selectedFlightId) ids.add(store.selectedFlightId);
+		for (const id of store.markedFlightIds) ids.add(id);
+		if (!ids.size) return [];
+		return store.flights.filter((f) => ids.has(f.flight_id));
+	}
+
+	function syncMapFlightHighlights() {
+		if (!map.value) return;
+		syncFlightHighlightStates(map.value, MAP_SOURCE_ID, {
+			selectedId: store.selectedFlightId,
+			markedIds: store.markedFlightIds,
+			hoveredId: hoveredFlightId,
+		});
+	}
+
+	function clearFlightHover(mapInstance: MapLibreMap) {
+		hoveredFlightId = null;
+		syncFlightHighlightStates(mapInstance, MAP_SOURCE_ID, {
+			selectedId: store.selectedFlightId,
+			markedIds: store.markedFlightIds,
+			hoveredId: null,
+		});
+		const tip = mapInstance.getSource(MAP_HOVER_SOURCE_ID) as
+			| GeoJSONSource
+			| undefined;
+		tip?.setData({ type: "FeatureCollection", features: [] });
+	}
+
+	function setFlightHover(
+		mapInstance: MapLibreMap,
+		feature: GeoJSON.Feature<GeoJSON.Point>,
+	) {
+		const props = feature.properties ?? {};
+		const flightId = props.flight_id;
+		if (typeof flightId !== "string" || !flightId) return;
+
+		if (hoveredFlightId === flightId) return;
+
+		hoveredFlightId = flightId;
+		syncFlightHighlightStates(mapInstance, MAP_SOURCE_ID, {
+			selectedId: store.selectedFlightId,
+			markedIds: store.markedFlightIds,
+			hoveredId: flightId,
+		});
+
+		const altRaw = props.altitude_ft as number | null | undefined;
+		const spdRaw = props.speed_kts as number | null | undefined;
+		const alt =
+			altRaw != null && Number.isFinite(altRaw) ? Math.round(altRaw) : null;
+		const spd =
+			spdRaw != null && Number.isFinite(spdRaw) ? Math.round(spdRaw) : null;
+		const dep = String(props.departure_airport ?? "").trim();
+		const arr = String(props.arrival_airport ?? "").trim();
+		const l1 = String(props.callsign ?? flightId).trim() || flightId;
+		const l2 =
+			alt != null && spd != null
+				? `${alt}  ${spd}`
+				: alt != null
+					? String(alt)
+					: spd != null
+						? String(spd)
+						: "";
+		const l3 = dep || arr ? `${dep} ${arr}`.trim() : "";
+
+		const tip = mapInstance.getSource(MAP_HOVER_SOURCE_ID) as
+			| GeoJSONSource
+			| undefined;
+		tip?.setData({
+			type: "FeatureCollection",
+			features: [
+				{
+					type: "Feature",
+					geometry: feature.geometry,
+					properties: { l1, l2, l3 },
+				},
+			],
+		});
+		if (mapInstance.getLayer(MAP_HOVER_LABEL_LAYER_ID)) {
+			mapInstance.setLayoutProperty(
+				MAP_HOVER_LABEL_LAYER_ID,
+				"visibility",
+				"visible",
+			);
+		}
+	}
+
+	function flightHoverHitLayers(mapInstance: MapLibreMap): string[] {
+		return [MAP_FLIGHT_HOVER_ICON_LAYER_ID, MAP_LAYER_ID].filter((id) =>
+			mapInstance.getLayer(id),
+		);
+	}
+
+	/** 地图级命中：避免珊瑚高亮层盖住 flight-points 后 mouseleave 立刻清除 */
+	function bindFlightHoverHandlers(mapInstance: MapLibreMap) {
+		if (flightHoverHandlersBound) return;
+		flightHoverHandlersBound = true;
+
+		mapInstance.on("mousemove", (event) => {
+			const layers = flightHoverHitLayers(mapInstance);
+			if (layers.length === 0) return;
+
+			const feature = mapInstance.queryRenderedFeatures(event.point, {
+				layers,
+			})[0];
+
+			if (!feature || feature.geometry.type !== "Point") {
+				clearFlightHover(mapInstance);
+				mapInstance.getCanvas().style.cursor = "";
+				return;
+			}
+
+			mapInstance.getCanvas().style.cursor = "pointer";
+			setFlightHover(mapInstance, feature as GeoJSON.Feature<GeoJSON.Point>);
+		});
+
+		mapInstance.on("mouseout", () => {
+			clearFlightHover(mapInstance);
+			mapInstance.getCanvas().style.cursor = "";
+		});
+	}
+
+	/** 样式/数据变更后再抬一次文字层，避免被底图 symbol 盖住 */
+	function scheduleOverlayLayerOrder(mapInstance: MapLibreMap) {
+		ensureOverlayLayerOrder(mapInstance);
+		applyMapMarkerLabelStyles(mapInstance);
+		if (overlayOrderIdlePending) return;
+		overlayOrderIdlePending = true;
+		const run = () => {
+			overlayOrderIdlePending = false;
+			ensureOverlayLayerOrder(mapInstance);
+			applyMapMarkerLabelStyles(mapInstance);
+		};
+		if (mapInstance.loaded()) {
+			mapInstance.once("idle", run);
+		} else {
+			mapInstance.once("load", () => mapInstance.once("idle", run));
+		}
+	}
+
+	function scheduleHubAirportLayerUpdate() {
+		if (_hubZoomTimer !== null) clearTimeout(_hubZoomTimer);
+		_hubZoomTimer = setTimeout(() => {
+			_hubZoomTimer = null;
+			scheduleMapUpdate(() => updateHubAirportLayer());
+		}, 280);
+	}
+
+	function bindHubZoomListener(mapInstance: MapLibreMap) {
+		if (hubZoomListenerBound) return;
+		hubZoomListenerBound = true;
+		mapInstance.on("zoomend", scheduleHubAirportLayerUpdate);
+	}
+
+	function toWeatherGridCenterGeoJson(
+		cells: WeatherGridCell[],
 	): GeoJSON.FeatureCollection<GeoJSON.Point> {
 		return {
 			type: "FeatureCollection",
-			features: flights.map((flight) => ({
+			features: cells.map((c) => ({
 				type: "Feature",
 				geometry: {
 					type: "Point",
-					coordinates: [flight.lon, flight.lat],
+					coordinates: [c.center_lon, c.center_lat],
 				},
 				properties: {
-					flight_id: flight.flight_id,
-					callsign: flight.callsign ?? flight.flight_id,
-					heading: flight.heading ?? null,
-					speed_kts: flight.speed_kts ?? null,
-					altitude_ft: flight.altitude_ft ?? null,
-					updated_at: flight.updated_at,
+					id: c.id,
+					has_weather: c.has_weather ? 1 : 0,
 				},
 			})),
 		};
 	}
 
-	function createPopupHtml(properties: Record<string, unknown>): string {
-		return `
-				<div class="popup">
-					<strong>${properties.callsign ?? properties.flight_id}</strong>
-					<div>ID: ${properties.flight_id ?? "--"}</div>
-					<div>高度: ${properties.altitude_ft ?? "--"} ft</div>
-					<div>速度: ${properties.speed_kts ?? "--"} kts</div>
-					<div>航向: ${properties.heading ?? "--"}°</div>
-				</div>
-			`;
-	}
-
-	/** 计划路线 GeoJSON：当前位置 → 目的地机场（虚线，仅在已知到达机场时有数据）*/
-	function toRouteGeoJson(): GeoJSON.FeatureCollection<GeoJSON.LineString> {
-		const flight = store.selectedFlight;
-		const detail = store.flightDetail;
-		if (!flight || !detail?.arrival_airport) {
-			return { type: "FeatureCollection", features: [] };
-		}
-		const arrAirport = store.airports.find(
-			(a) => a.iata === detail.arrival_airport,
-		);
-		if (!arrAirport) {
-			return { type: "FeatureCollection", features: [] };
-		}
+	function toWeatherGridGeoJson(
+		cells: WeatherGridCell[],
+	): GeoJSON.FeatureCollection<GeoJSON.Polygon> {
 		return {
 			type: "FeatureCollection",
-			features: [
-				{
-					type: "Feature",
-					geometry: {
-						type: "LineString",
-						coordinates: [
-							[flight.lon, flight.lat],
-							[arrAirport.lon, arrAirport.lat],
+			features: cells.map((c) => ({
+				type: "Feature",
+				geometry: {
+					type: "Polygon",
+					coordinates: [
+						[
+							[c.cell_min_lon, c.cell_min_lat],
+							[c.cell_max_lon, c.cell_min_lat],
+							[c.cell_max_lon, c.cell_max_lat],
+							[c.cell_min_lon, c.cell_max_lat],
+							[c.cell_min_lon, c.cell_min_lat],
 						],
-					},
-					properties: { arr_iata: arrAirport.iata },
+					],
 				},
-			],
+				properties: {
+					id: c.id,
+					has_weather: c.has_weather ? 1 : 0,
+					flight_count: c.flight_count,
+					temperature_c: c.temperature_c ?? null,
+					description: c.description ?? "",
+				},
+			})),
 		};
+	}
+
+	function updateWeatherGridLayer() {
+		if (!map.value) return;
+		const cells = weatherGridCells.value;
+		const polySrc = map.value.getSource(MAP_GRID_SOURCE_ID) as
+			| GeoJSONSource
+			| undefined;
+		polySrc?.setData(toWeatherGridGeoJson(cells));
+		const ptSrc = map.value.getSource(MAP_GRID_POINTS_SOURCE_ID) as
+			| GeoJSONSource
+			| undefined;
+		ptSrc?.setData(toWeatherGridCenterGeoJson(cells));
+	}
+
+	async function refreshWeatherGrid(force = false) {
+		let cells: WeatherGridCell[] = [];
+		try {
+			cells = await fetchWeatherGrid(force);
+		} catch {
+			cells = [];
+		}
+		if (cells.length === 0 && store.flights.length > 0) {
+			cells = computeWeatherGridFromFlights(store.flights, store.airports);
+		}
+		try {
+			const weatherData = await fetchDatahubWeather(force);
+			cells = enrichCellsWithGrdWeather(cells, weatherData);
+		} catch {
+			// 无天气缓存时保留灰色“待采集”网格
+		}
+		weatherGridCells.value = cells;
+		updateWeatherGridLayer();
+	}
+
+	function ensureWeatherGridLayers(
+		mapInstance: MapLibreMap,
+		beforeId?: string,
+	) {
+		const anchor =
+			beforeId ??
+			mapInstance.getStyle().layers.find((l) => l.type === "symbol")?.id;
+		if (!mapInstance.getSource(MAP_GRID_SOURCE_ID)) {
+			mapInstance.addSource(MAP_GRID_SOURCE_ID, {
+				type: "geojson",
+				data: toWeatherGridGeoJson(weatherGridCells.value),
+			});
+		}
+		if (!mapInstance.getSource(MAP_GRID_POINTS_SOURCE_ID)) {
+			mapInstance.addSource(MAP_GRID_POINTS_SOURCE_ID, {
+				type: "geojson",
+				data: toWeatherGridCenterGeoJson(weatherGridCells.value),
+			});
+		}
+		if (!mapInstance.getLayer(MAP_GRID_FILL_LAYER_ID)) {
+			mapInstance.addLayer(
+				{
+					id: MAP_GRID_FILL_LAYER_ID,
+					type: "fill",
+					source: MAP_GRID_SOURCE_ID,
+					layout: {
+						visibility: showGridPoints.value ? "visible" : "none",
+					},
+					paint: weatherGridFillPaint(),
+				},
+				anchor,
+			);
+		}
+		if (!mapInstance.getLayer(MAP_GRID_LINE_LAYER_ID)) {
+			mapInstance.addLayer(
+				{
+					id: MAP_GRID_LINE_LAYER_ID,
+					type: "line",
+					source: MAP_GRID_SOURCE_ID,
+					layout: {
+						visibility: showGridPoints.value ? "visible" : "none",
+					},
+					paint: weatherGridOutlinePaint(),
+				},
+				anchor,
+			);
+		}
+		if (!mapInstance.getLayer(MAP_GRID_MARKER_LAYER_ID)) {
+			mapInstance.addLayer(
+				{
+					id: MAP_GRID_MARKER_LAYER_ID,
+					type: "symbol",
+					source: MAP_GRID_POINTS_SOURCE_ID,
+					layout: {
+						visibility: showGridPoints.value ? "visible" : "none",
+						...weatherGridMarkerLayout(),
+					},
+					paint: weatherGridMarkerPaint(),
+				},
+				anchor,
+			);
+		}
+		updateWeatherGridLayer();
+	}
+
+	function startGridRefresh() {
+		stopGridRefresh();
+		void refreshWeatherGrid(false);
+		_gridRefreshTimer = setInterval(() => {
+			if (showGridPoints.value) void refreshWeatherGrid(false);
+		}, 60_000);
+	}
+
+	function stopGridRefresh() {
+		if (_gridRefreshTimer !== null) {
+			clearInterval(_gridRefreshTimer);
+			_gridRefreshTimer = null;
+		}
+		if (_gridFlightRefreshTimer !== null) {
+			clearTimeout(_gridFlightRefreshTimer);
+			_gridFlightRefreshTimer = null;
+		}
+		gridPopup?.remove();
+		gridPopup = null;
+	}
+
+	function updateAirportHighlight() {
+		if (!map.value) return;
+		const detail = store.flightDetail;
+		const hubIata =
+			selectedHubIata.value &&
+			(showHubAirports.value || store.scheduleAirport === selectedHubIata.value)
+				? selectedHubIata.value
+				: null;
+		const points = resolveRouteAirports({
+			departure_airport: detail?.departure_airport,
+			arrival_airport: detail?.arrival_airport,
+			departure_lat: detail?.departure_lat,
+			departure_lon: detail?.departure_lon,
+			arrival_lat: detail?.arrival_lat,
+			arrival_lon: detail?.arrival_lon,
+			hubIata,
+			airportsInStore: store.airports,
+		});
+		const src = map.value.getSource(MAP_AIRPORT_HIGHLIGHT_SOURCE_ID) as
+			| GeoJSONSource
+			| undefined;
+		src?.setData(buildRouteAirportHighlightCollection(points));
+		syncHubHighlightVisibility();
+	}
+
+	/** 剩余航程示意：当前位置 → 目的地（直线，非历史轨迹） */
+	function toRouteGeoJson(): GeoJSON.FeatureCollection<GeoJSON.LineString> {
+		return buildPlannedRouteGeoJson({
+			flight: store.selectedFlight,
+			detail: store.flightDetail,
+			trackPoints: store.selectedTrackPoints,
+			airports: store.airports,
+		});
 	}
 
 	function updateRouteLayer() {
@@ -1080,34 +1396,6 @@
 			| GeoJSONSource
 			| undefined;
 		src?.setData(toRouteGeoJson());
-	}
-
-	function toTrackGeoJson(): GeoJSON.FeatureCollection<GeoJSON.LineString> {
-		if (store.selectedTrackPoints.length < 2) {
-			return {
-				type: "FeatureCollection",
-				features: [],
-			};
-		}
-
-		return {
-			type: "FeatureCollection",
-			features: [
-				{
-					type: "Feature",
-					geometry: {
-						type: "LineString",
-						coordinates: store.selectedTrackPoints.map((point) => [
-							point.lon,
-							point.lat,
-						]),
-					},
-					properties: {
-						flight_id: store.selectedFlightId ?? "",
-					},
-				},
-			],
-		};
 	}
 
 	function fitToFlights(flights: FlightBrief[]) {
@@ -1163,39 +1451,77 @@
 			return;
 		}
 
-		source.setData(toGeoJson(flights));
-		updateSelectedFlightHighlight();
+		const prevIds = flightFeatureIndex
+			? new Set(flightFeatureIndex.keys())
+			: new Set<string>();
+		const { geojson, index, fleetChanged } = patchFlightGeoJson(
+			flights,
+			flightFeatureIndex,
+		);
+		flightFeatureIndex = index;
+
+		if (fleetChanged) {
+			for (const id of prevIds) {
+				if (!index.has(id)) {
+					clearFlightFeatureStates(map.value, MAP_SOURCE_ID, [id]);
+				}
+			}
+		}
+
+		source.setData(geojson);
+		syncMapFlightHighlights();
+		syncEnvironmentalOverlayMode();
 		fitToFlights(flights);
 	}
 
-	function updateTrackLayer() {
-		if (!map.value) {
+	function scheduleFlightLayerUpdate(debounceMs = 0) {
+		const run = () => {
+			if (!map.value) return;
+			updateFlightLayer(flightsForMap());
+		};
+		if (debounceMs <= 0) {
+			scheduleMapUpdate(run);
 			return;
 		}
+		if (_flightUpdateTimer !== null) clearTimeout(_flightUpdateTimer);
+		_flightUpdateTimer = setTimeout(() => {
+			_flightUpdateTimer = null;
+			scheduleMapUpdate(run);
+		}, debounceMs);
+	}
 
-		const source = map.value.getSource(MAP_TRACK_SOURCE_ID) as
+	function scheduleBilingualLabels() {
+		if (!map.value) return;
+		if (_labelApplyTimer !== null) clearTimeout(_labelApplyTimer);
+		_labelApplyTimer = setTimeout(() => {
+			_labelApplyTimer = null;
+			if (!map.value) return;
+			applyBilingualLabels(map.value);
+			scheduleOverlayLayerOrder(map.value);
+			applyMapMarkerLabelStyles(map.value);
+		}, 400);
+	}
+
+	function updateTrackLayer() {
+		if (!map.value) return;
+		const source = map.value.getSource(MAP_TRACK_SEG_SOURCE_ID) as
 			| GeoJSONSource
 			| undefined;
-		if (!source) {
-			return;
-		}
-
-		source.setData(toTrackGeoJson());
+		if (!source) return;
+		source.setData(
+			buildHistoricalTrackSegmentCollection(
+				store.selectedTrackPoints,
+				store.selectedFlightId ?? "",
+			),
+		);
 	}
 
 	function updateSelectedFlightHighlight() {
-		if (!map.value || !map.value.getLayer(MAP_SELECTED_LAYER_ID)) {
-			return;
-		}
+		syncMapFlightHighlights();
+	}
 
-		const selectedId = store.selectedFlightId;
-		// 同时排除聚合节点，避免在低缩放级别下误匹配
-		map.value.setFilter(
-			MAP_SELECTED_LAYER_ID,
-			selectedId
-				? ["==", ["get", "flight_id"], selectedId]
-				: ["==", ["get", "flight_id"], ""],
-		);
+	function updateMarkedFlightHighlight() {
+		syncMapFlightHighlights();
 	}
 
 	function focusSelectedFlight(flight: FlightBrief | null) {
@@ -1210,13 +1536,18 @@
 		});
 	}
 
-	/** 将 SVG 文本中的填充色/描边色替换为指定颜色（保留 none 不变） */
-	function svgWithColor(svgRaw: string, color: string): string {
-		return svgRaw
-			.replace(/fill="(?!none)[^"]*"/g, `fill="${color}"`)
-			.replace(/fill:(?!\s*none)[^;}"']*/g, `fill:${color}`)
-			.replace(/stroke="(?!none)[^"]*"/g, `stroke="${color}"`)
-			.replace(/stroke:(?!\s*none)[^;}"']*/g, `stroke:${color}`);
+	/** 琥珀金填充 + 细暗描边，避免在沙漠/绿地融入背景 */
+	function svgWithAircraftStyle(svgRaw: string, fillColor: string): string {
+		const strokeColor = "#140f08";
+		const strokeWidth = 42;
+		let s = svgRaw
+			.replace(/fill="(?!none)[^"]*"/g, `fill="${fillColor}"`)
+			.replace(/fill:(?!\s*none)[^;}"']*/g, `fill:${fillColor}`);
+		s = s.replace(
+			/<path /g,
+			`<path stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linejoin="round" stroke-linecap="round" paint-order="stroke fill" `,
+		);
+		return s;
 	}
 
 	/** 加载自定义图标并注册到地图实例（SVG → Canvas → ImageData，兼容所有浏览器）*/
@@ -1275,7 +1606,7 @@
 		svgRaw: string,
 		fillColor: string,
 	): Promise<void> {
-		const colored = svgWithColor(svgRaw, fillColor);
+		const colored = svgWithAircraftStyle(svgRaw, fillColor);
 		const dataUrl =
 			"data:image/svg+xml;charset=utf-8," + encodeURIComponent(colored);
 		// 先移除已有图标，避免并发更新导致竞态条件
@@ -1297,16 +1628,14 @@
 		const boldFonts: Record<MapProvider, string[]> = {
 			maptiler: ["Open Sans Bold", "Arial Unicode MS Regular"],
 			stadia: ["Open Sans Bold", "Arial Unicode MS Regular"],
-			openfreemap: [
-				"Metropolis Bold",
-				"Noto Sans Bold",
-				"Arial Unicode MS Regular",
-			],
+			openfreemap: [...OPENFREEMAP_LABEL_FONTS],
 		};
 		const fonts = boldFonts[currentProvider.value] ?? [
 			"Open Sans Bold",
 			"Arial Unicode MS Regular",
 		];
+		const useOpenFreeMapNativePlaceLabels =
+			currentProvider.value === "openfreemap";
 
 		/**
 		 * 主行表达式：英文/本地名称，有充分兜底
@@ -1392,6 +1721,15 @@
 
 		for (const layer of style.layers) {
 			if (layer.type !== "symbol") continue;
+			// 叠加层标注（机场/风场/悬浮）使用独立 text-field，不可套用底图双语逻辑
+			if (
+				layer.id === MAP_AIRPORT_LABEL_LAYER_ID ||
+				layer.id === MAP_AIRPORT_HIGHLIGHT_LABEL_ID ||
+				layer.id === MAP_WIND_LABEL_LAYER_ID ||
+				layer.id === MAP_HOVER_LABEL_LAYER_ID
+			) {
+				continue;
+			}
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			const layout = (layer as any).layout ?? {};
 			const field = layout["text-field"];
@@ -1408,9 +1746,55 @@
 			)
 				continue;
 
+			// OpenFreeMap 行政地名沿用样式内置 text-field（latin/nonlatin），避免标注消失
+			if (
+				useOpenFreeMapNativePlaceLabels &&
+				isOpenFreeMapPlaceLabelLayer(layer.id)
+			) {
+				mapInstance.setLayoutProperty(layer.id, "text-font", fonts);
+				continue;
+			}
+
 			mapInstance.setLayoutProperty(layer.id, "text-field", textField);
 			mapInstance.setLayoutProperty(layer.id, "text-font", fonts);
 		}
+
+		const dark = isDarkBasemapStyle(currentStyleId.value);
+		const labelColor = dark ? "#f8fafc" : "#1e293b";
+		const labelHalo = dark ? "rgba(15, 23, 42, 0.8)" : "rgba(255, 255, 255, 0.9)";
+
+		for (const layer of style.layers) {
+			if (layer.type !== "symbol") continue;
+			if (
+				layer.id === MAP_AIRPORT_LABEL_LAYER_ID ||
+				layer.id === MAP_AIRPORT_HIGHLIGHT_LABEL_ID ||
+				layer.id === MAP_WIND_LABEL_LAYER_ID ||
+				layer.id === MAP_HOVER_LABEL_LAYER_ID
+			) {
+				continue;
+			}
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const layout = (layer as any).layout ?? {};
+			if (!layout["text-field"]) continue;
+			const fieldStr = JSON.stringify(layout["text-field"]);
+			if (!fieldStr.includes("name")) continue;
+			if (/"ref"/.test(fieldStr)) continue;
+			if (
+				layer.id.includes("shield") ||
+				layer.id.includes("route") ||
+				layer.id.includes("-ref")
+			) {
+				continue;
+			}
+			try {
+				mapInstance.setPaintProperty(layer.id, "text-color", labelColor);
+				mapInstance.setPaintProperty(layer.id, "text-halo-color", labelHalo);
+				mapInstance.setPaintProperty(layer.id, "text-halo-width", 1.25);
+			} catch {
+				/* 部分图层不可写 paint */
+			}
+		}
+
 	}
 
 	function initMap() {
@@ -1439,6 +1823,8 @@
 				style: styleUrl,
 				center: [MAP_INIT_LNG, MAP_INIT_LAT],
 				zoom: MAP_INIT_ZOOM,
+				minZoom: 0,
+				maxZoom: 18,
 				attributionControl: true,
 				localIdeographFontFamily:
 					"Noto Sans CJK SC, Microsoft YaHei, SimHei, sans-serif",
@@ -1450,10 +1836,9 @@
 				transformRequest,
 			});
 
-			mapInstance.addControl(new maplibregl.NavigationControl(), "top-right");
 			mapInstance.addControl(
-				new maplibregl.ScaleControl({ maxWidth: 120, unit: "metric" }),
-				"bottom-right",
+				new maplibregl.ScaleControl({ maxWidth: 480, unit: "metric" }),
+				"bottom-left",
 			);
 
 			// Runtime error: detect quota exceeded (403/429) and failover
@@ -1486,11 +1871,14 @@
 
 			mapInstance.on("load", async () => {
 				await reinitLayers(mapInstance);
-				updateFlightLayer(store.flights);
+				updateFlightLayer(flightsForMap());
 				updateSelectedFlightHighlight();
 				updateTrackLayer();
 				updateRouteLayer();
 			});
+
+			mapInstance.on("rotate", syncMapBearing);
+			syncMapBearing();
 
 			map.value = markRaw(mapInstance);
 		})();
@@ -1533,6 +1921,69 @@
 			);
 		}
 
+		// 暗色底图略降对比度（不改动底图 JSON）
+		if (!mapInstance.getSource("basemap-dim-src")) {
+			mapInstance.addSource("basemap-dim-src", {
+				type: "geojson",
+				data: {
+					type: "FeatureCollection",
+					features: [
+						{
+							type: "Feature",
+							properties: {},
+							geometry: {
+								type: "Polygon",
+								coordinates: [
+									[
+										[-180, -85],
+										[180, -85],
+										[180, 85],
+										[-180, 85],
+										[-180, -85],
+									],
+								],
+							},
+						},
+					],
+				},
+			});
+		}
+		if (!mapInstance.getLayer("basemap-dim")) {
+			mapInstance.addLayer(
+				{
+					id: "basemap-dim",
+					type: "fill",
+					source: "basemap-dim-src",
+					layout: {
+						visibility: isDarkBasemapStyle(currentStyleId.value)
+							? "visible"
+							: "none",
+					},
+					paint: {
+						"fill-color": "#000000",
+						"fill-opacity": [
+							"interpolate",
+							["linear"],
+							["zoom"],
+							2,
+							0.14,
+							6,
+							0.1,
+							12,
+							0.05,
+						],
+					},
+				},
+				firstSymbolLayer?.id,
+			);
+		} else {
+			mapInstance.setLayoutProperty(
+				"basemap-dim",
+				"visibility",
+				isDarkBasemapStyle(currentStyleId.value) ? "visible" : "none",
+			);
+		}
+
 		// ── Weather / wind / temp source ────────────────────────────────────────
 		if (!mapInstance.getSource(MAP_WIND_SOURCE_ID)) {
 			mapInstance.addSource(MAP_WIND_SOURCE_ID, {
@@ -1548,84 +1999,7 @@
 				type: "circle",
 				source: MAP_WIND_SOURCE_ID,
 				layout: { visibility: "none" },
-				paint: {
-					"circle-radius": 18,
-					"circle-opacity": 0.55,
-					"circle-stroke-width": 1,
-					"circle-stroke-color": "rgba(255,255,255,0.6)",
-					// Color ramp: cold(-20°C)=blue → cool(0°C)=cyan → warm(25°C)=yellow → hot(40°C)=red
-					"circle-color": [
-						"interpolate",
-						["linear"],
-						["get", "temperature_c"],
-						-20,
-						"#2196f3",
-						0,
-						"#00bcd4",
-						15,
-						"#4caf50",
-						25,
-						"#ffeb3b",
-						35,
-						"#ff9800",
-						45,
-						"#f44336",
-					],
-				},
-			});
-		}
-
-		// Wind direction arrows + speed labels (hidden by default)
-		if (!mapInstance.getLayer(MAP_WIND_ARROW_LAYER_ID)) {
-			mapInstance.addLayer({
-				id: MAP_WIND_ARROW_LAYER_ID,
-				type: "symbol",
-				source: MAP_WIND_SOURCE_ID,
-				layout: {
-					visibility: "none",
-					"text-field": "↑",
-					"text-size": 20,
-					"text-rotate": ["get", "wind_deg"],
-					"text-rotation-alignment": "map",
-					"text-allow-overlap": true,
-					"text-ignore-placement": true,
-				},
-				paint: {
-					"text-color": "#e0f2fe",
-					"text-halo-color": "rgba(0,0,0,0.5)",
-					"text-halo-width": 1,
-				},
-			});
-		}
-
-		if (!mapInstance.getLayer(MAP_WIND_LABEL_LAYER_ID)) {
-			mapInstance.addLayer({
-				id: MAP_WIND_LABEL_LAYER_ID,
-				type: "symbol",
-				source: MAP_WIND_SOURCE_ID,
-				layout: {
-					visibility: "none",
-					"text-field": [
-						"concat",
-						["get", "iata"],
-						"\n",
-						["to-string", ["round", ["get", "wind_speed_mps"]]],
-						"m/s",
-						"\n",
-						["to-string", ["round", ["get", "temperature_c"]]],
-						"°C",
-					],
-					"text-size": 10,
-					"text-anchor": "top",
-					"text-offset": [0, 1.2],
-					"text-font": ["Noto Sans Regular"],
-					"text-allow-overlap": false,
-				},
-				paint: {
-					"text-color": "#f0f9ff",
-					"text-halo-color": "rgba(0,0,0,0.6)",
-					"text-halo-width": 1.5,
-				},
+				paint: tempCirclePaint(),
 			});
 		}
 
@@ -1633,161 +2007,23 @@
 		// Added as a heatmap layer using the same flights geojson source.
 		// We'll add it after MAP_SOURCE_ID is added below.
 
-		// ── Airport layers (hub + grid split) ───────────────────────────────────
+		// ── Airport source（图层在飞机之上，见 flight-points 之后）──────────────
 		if (!mapInstance.getSource(MAP_AIRPORT_SOURCE_ID)) {
 			mapInstance.addSource(MAP_AIRPORT_SOURCE_ID, {
 				type: "geojson",
-				data: toAirportGeoJson(store.airports),
+				data: toHubAirportGeoJson(
+					store.airports,
+					store.flights,
+					mapInstance.getZoom(),
+				),
 			});
 		}
-		if (!mapInstance.getLayer(MAP_AIRPORT_LAYER_ID)) {
-			mapInstance.addLayer({
-				id: MAP_AIRPORT_LAYER_ID,
-				type: "circle",
-				source: MAP_AIRPORT_SOURCE_ID,
-				filter: ["!=", ["get", "point_type"], "grid"],
-				layout: {
-					visibility: showHubAirports.value ? "visible" : "none",
-				},
-				paint: {
-					"circle-radius": [
-						"interpolate",
-						["linear"],
-						["zoom"],
-						3,
-						4,
-						8,
-						6,
-						12,
-						8,
-					],
-					"circle-color": "#ffffff",
-					"circle-stroke-width": 2,
-					"circle-stroke-color": "#374151",
-					"circle-pitch-alignment": "viewport",
-				},
-			});
-		}
-		if (!mapInstance.getLayer(MAP_AIRPORT_LABEL_LAYER_ID)) {
-			mapInstance.addLayer({
-				id: MAP_AIRPORT_LABEL_LAYER_ID,
-				type: "symbol",
-				source: MAP_AIRPORT_SOURCE_ID,
-				filter: ["!=", ["get", "point_type"], "grid"],
-				layout: {
-					visibility: showHubAirports.value ? "visible" : "none",
-					"text-field": ["get", "iata"],
-					"text-size": 11,
-					"text-anchor": "top",
-					"text-offset": [0, 0.7],
-					"text-font": ["Noto Sans Bold", "Noto Sans Regular"],
-				},
-				paint: {
-					"text-color": "#111827",
-					"text-halo-color": "#ffffff",
-					"text-halo-width": 2,
-				},
-			});
-		}
-		if (!mapInstance.getLayer(MAP_GRID_LAYER_ID)) {
-			mapInstance.addLayer({
-				id: MAP_GRID_LAYER_ID,
-				type: "circle",
-				source: MAP_AIRPORT_SOURCE_ID,
-				filter: ["==", ["get", "point_type"], "grid"],
-				layout: {
-					visibility: showGridPoints.value ? "visible" : "none",
-				},
-				paint: {
-					"circle-radius": [
-						"interpolate",
-						["linear"],
-						["zoom"],
-						3,
-						2,
-						8,
-						3,
-						12,
-						4,
-					],
-					"circle-color": "#22d3ee",
-					"circle-stroke-width": 1,
-					"circle-stroke-color": "#0e7490",
-					"circle-opacity": 0.75,
-					"circle-pitch-alignment": "viewport",
-				},
-			});
-		}
-		if (!mapInstance.getLayer(MAP_GRID_LABEL_LAYER_ID)) {
-			mapInstance.addLayer({
-				id: MAP_GRID_LABEL_LAYER_ID,
-				type: "symbol",
-				source: MAP_AIRPORT_SOURCE_ID,
-				filter: ["==", ["get", "point_type"], "grid"],
-				layout: {
-					visibility: showGridPoints.value ? "visible" : "none",
-					"text-field": ["get", "iata"],
-					"text-size": 9,
-					"text-anchor": "top",
-					"text-offset": [0, 0.6],
-					"text-font": ["Noto Sans Regular"],
-				},
-				paint: {
-					"text-color": "#0e7490",
-					"text-halo-color": "#ecfeff",
-					"text-halo-width": 1.5,
-				},
-			});
-		}
+		ensureWeatherGridLayers(mapInstance, firstSymbolLayer?.id);
 
 		if (!mapInstance.getSource(MAP_AIRPORT_HIGHLIGHT_SOURCE_ID)) {
 			mapInstance.addSource(MAP_AIRPORT_HIGHLIGHT_SOURCE_ID, {
 				type: "geojson",
 				data: toAirportGeoJson([]),
-			});
-		}
-		if (!mapInstance.getLayer(MAP_AIRPORT_HIGHLIGHT_LAYER_ID)) {
-			mapInstance.addLayer({
-				id: MAP_AIRPORT_HIGHLIGHT_LAYER_ID,
-				type: "circle",
-				source: MAP_AIRPORT_HIGHLIGHT_SOURCE_ID,
-				paint: {
-					"circle-radius": [
-						"interpolate",
-						["linear"],
-						["zoom"],
-						3,
-						6,
-						8,
-						10,
-						12,
-						14,
-					],
-					"circle-color": "#d1fae5",
-					"circle-stroke-width": 2.5,
-					"circle-stroke-color": "#059669",
-					"circle-blur": 0.1,
-					"circle-pitch-alignment": "viewport",
-				},
-			});
-		}
-		if (!mapInstance.getLayer(MAP_AIRPORT_HIGHLIGHT_LABEL_ID)) {
-			mapInstance.addLayer({
-				id: MAP_AIRPORT_HIGHLIGHT_LABEL_ID,
-				type: "symbol",
-				source: MAP_AIRPORT_HIGHLIGHT_SOURCE_ID,
-				layout: {
-					"text-field": ["concat", ["get", "iata"], "\n", ["get", "name"]],
-					"text-size": 12,
-					"text-anchor": "top",
-					"text-offset": [0, 0.7],
-					"text-font": ["Noto Sans Regular"],
-				},
-				paint: {
-					"text-color": "#065f46",
-					"text-halo-color": "#ffffff",
-					"text-halo-width": 2,
-				},
 			});
 		}
 
@@ -1807,51 +2043,7 @@
 					type: "heatmap",
 					source: MAP_AQI_SOURCE_ID,
 					layout: { visibility: "none" },
-					paint: {
-						"heatmap-weight": [
-							"interpolate",
-							["linear"],
-							["coalesce", ["get", "pm2_5"], 0],
-							0,
-							0,
-							75,
-							1,
-						],
-						"heatmap-intensity": [
-							"interpolate",
-							["linear"],
-							["zoom"],
-							4,
-							0.5,
-							9,
-							2,
-						],
-						"heatmap-radius": [
-							"interpolate",
-							["linear"],
-							["zoom"],
-							4,
-							40,
-							9,
-							80,
-						],
-						"heatmap-opacity": 0.7,
-						"heatmap-color": [
-							"interpolate",
-							["linear"],
-							["heatmap-density"],
-							0,
-							"rgba(0,228,0,0)",
-							0.2,
-							"rgba(255,255,0,0.6)",
-							0.5,
-							"rgba(255,126,0,0.75)",
-							0.8,
-							"rgba(255,0,0,0.85)",
-							1.0,
-							"rgba(143,63,151,0.9)",
-						],
-					},
+					paint: aqiHeatmapPaint(),
 				},
 				firstSymbolLayer?.id,
 			);
@@ -1863,40 +2055,7 @@
 				type: "circle",
 				source: MAP_AQI_SOURCE_ID,
 				layout: { visibility: store.showAqiLayer ? "visible" : "none" },
-				paint: {
-					// 半径按 AQI 等级比例缩放，轻度=12, 中度=16, 重度=22
-					"circle-radius": [
-						"step",
-						["get", "aqi"],
-						10,
-						2,
-						14,
-						3,
-						18,
-						4,
-						22,
-						5,
-						26,
-					],
-					"circle-blur": 0.5,
-					"circle-opacity": 0.6,
-					"circle-stroke-width": 1.5,
-					"circle-stroke-color": "rgba(255,255,255,0.8)",
-					"circle-pitch-alignment": "viewport",
-					"circle-color": [
-						"step",
-						["get", "aqi"],
-						AQI_COLORS[0],
-						2,
-						AQI_COLORS[1],
-						3,
-						AQI_COLORS[2],
-						4,
-						AQI_COLORS[3],
-						5,
-						AQI_COLORS[4],
-					],
-				},
+				paint: aqiCirclePaint(),
 			});
 		}
 
@@ -1907,30 +2066,41 @@
 				source: MAP_AQI_SOURCE_ID,
 				layout: {
 					visibility: store.showAqiLayer ? "visible" : "none",
-					"text-field": [
-						"concat",
-						["get", "iata"],
-						"\nAQI:",
-						["to-string", ["get", "aqi"]],
-					],
-					"text-size": 10,
-					"text-anchor": "center",
-					"text-font": ["Noto Sans Regular"],
+					...aqiLabelLayout(),
 				},
-				paint: {
-					"text-color": "#111827",
-					"text-halo-color": "#ffffff",
-					"text-halo-width": 1.5,
-				},
+				paint: aqiLabelPaint(),
 			});
 		}
 
 		// ── Flights source & layers ───────────────────────────────────────────────
 		if (!mapInstance.getSource(MAP_SOURCE_ID)) {
+			const initial = patchFlightGeoJson(flightsForMap(), null);
+			flightFeatureIndex = initial.index;
 			mapInstance.addSource(MAP_SOURCE_ID, {
 				type: "geojson",
-				data: toGeoJson(store.flights),
+				promoteId: "flight_id",
+				data: initial.geojson,
 			});
+		}
+
+		if (!mapInstance.getSource(MAP_HOVER_SOURCE_ID)) {
+			mapInstance.addSource(MAP_HOVER_SOURCE_ID, {
+				type: "geojson",
+				data: { type: "FeatureCollection", features: [] },
+			});
+		}
+
+		if (!mapInstance.getLayer(MAP_TEMP_HEATMAP_LAYER_ID)) {
+			mapInstance.addLayer(
+				{
+					id: MAP_TEMP_HEATMAP_LAYER_ID,
+					type: "heatmap",
+					source: MAP_WIND_SOURCE_ID,
+					layout: { visibility: "none" },
+					paint: tempHeatmapPaint(),
+				},
+				firstSymbolLayer?.id,
+			);
 		}
 
 		// Flight density heatmap (hidden by default) — 背景层，置于地图标注之下
@@ -1941,43 +2111,7 @@
 					type: "heatmap",
 					source: MAP_SOURCE_ID,
 					layout: { visibility: "none" },
-					paint: {
-						"heatmap-weight": 0.5,
-						"heatmap-intensity": [
-							"interpolate",
-							["linear"],
-							["zoom"],
-							3,
-							0.3,
-							9,
-							1.5,
-						],
-						"heatmap-radius": [
-							"interpolate",
-							["linear"],
-							["zoom"],
-							3,
-							15,
-							9,
-							30,
-						],
-						"heatmap-opacity": 0.6,
-						"heatmap-color": [
-							"interpolate",
-							["linear"],
-							["heatmap-density"],
-							0,
-							"rgba(0,0,255,0)",
-							0.2,
-							"rgba(0,128,255,0.5)",
-							0.5,
-							"rgba(0,255,200,0.7)",
-							0.8,
-							"rgba(255,200,0,0.85)",
-							1.0,
-							"rgba(255,50,0,0.9)",
-						],
-					},
+					paint: flightDensityHeatmapPaint(),
 				},
 				firstSymbolLayer?.id,
 			);
@@ -1989,7 +2123,7 @@
 				id: MAP_SELECTED_LAYER_ID,
 				type: "circle",
 				source: MAP_SOURCE_ID,
-				filter: ["==", ["get", "flight_id"], ""],
+				filter: FEATURE_STATE_SELECTED,
 				paint: {
 					"circle-radius": 14,
 					"circle-color": "#f59e0b",
@@ -1999,7 +2133,52 @@
 			});
 		}
 
-		// Planned route
+		if (!mapInstance.getLayer(MAP_MARKED_LAYER_ID)) {
+			mapInstance.addLayer({
+				id: MAP_MARKED_LAYER_ID,
+				type: "circle",
+				source: MAP_SOURCE_ID,
+				filter: FEATURE_STATE_MARKED,
+				paint: {
+					"circle-radius": 20,
+					"circle-color": "rgba(244, 63, 94, 0.12)",
+					"circle-stroke-color": "#fb7185",
+					"circle-stroke-width": 3,
+					"circle-opacity": 1,
+				},
+			});
+		}
+
+		// 清理重构期间产生的错误图层 id，避免与当前 planned-route 冲突
+		for (const legacyLayerId of [
+			"skytrace-remaining-route-line",
+			"skytrace-remaining-route-glow",
+			"flight-track-planned",
+			"flight-track-planned-glow",
+		]) {
+			if (mapInstance.getLayer(legacyLayerId)) {
+				try {
+					mapInstance.removeLayer(legacyLayerId);
+				} catch {
+					/* ignore */
+				}
+			}
+		}
+		for (const legacySourceId of [
+			"skytrace-remaining-route-geo",
+			"geo-flight-planned-route",
+			"flight-track-planned-src",
+		]) {
+			if (mapInstance.getSource(legacySourceId)) {
+				try {
+					mapInstance.removeSource(legacySourceId);
+				} catch {
+					/* ignore */
+				}
+			}
+		}
+
+		// 剩余航程（早期可工作方案：独立 source + 单层 line，仅 setData 更新）
 		if (!mapInstance.getSource(MAP_ROUTE_SOURCE_ID)) {
 			mapInstance.addSource(MAP_ROUTE_SOURCE_ID, {
 				type: "geojson",
@@ -2011,55 +2190,36 @@
 				id: MAP_ROUTE_LAYER_ID,
 				type: "line",
 				source: MAP_ROUTE_SOURCE_ID,
-				layout: { "line-cap": "butt", "line-join": "round" },
-				paint: {
-					"line-color": "#60a5fa",
-					"line-width": 2,
-					"line-opacity": 0.75,
-					"line-dasharray": [4, 3],
-				},
-			});
-		}
-
-		// Track line
-		if (!mapInstance.getSource(MAP_TRACK_SOURCE_ID)) {
-			mapInstance.addSource(MAP_TRACK_SOURCE_ID, {
-				type: "geojson",
-				data: toTrackGeoJson(),
-			});
-		}
-		if (!mapInstance.getLayer(MAP_TRACK_LAYER_ID)) {
-			mapInstance.addLayer({
-				id: MAP_TRACK_LAYER_ID,
-				type: "line",
-				source: MAP_TRACK_SOURCE_ID,
 				layout: { "line-cap": "round", "line-join": "round" },
 				paint: {
-					"line-color": "#f59e0b",
+					"line-color": "#22d3ee",
 					"line-width": 3,
-					"line-opacity": 0.9,
+					"line-opacity": 0.92,
+					"line-dasharray": [2, 2.5],
 				},
-			});
-		}
-		if (!mapInstance.getLayer(MAP_TRACK_ARROW_LAYER_ID)) {
-			mapInstance.addLayer({
-				id: MAP_TRACK_ARROW_LAYER_ID,
-				type: "symbol",
-				source: MAP_TRACK_SOURCE_ID,
-				layout: {
-					"symbol-placement": "line",
-					"symbol-spacing": 60,
-					"text-field": "▶",
-					"text-size": 10,
-					"text-rotation-alignment": "map",
-					"text-allow-overlap": true,
-					"text-ignore-placement": true,
-				},
-				paint: { "text-color": "#f59e0b", "text-opacity": 0.9 },
 			});
 		}
 
-		// ── Region filter highlight — 区域背景框（置于地图标注之下）──────────────────────
+		if (!mapInstance.getSource(MAP_TRACK_SEG_SOURCE_ID)) {
+			mapInstance.addSource(MAP_TRACK_SEG_SOURCE_ID, {
+				type: "geojson",
+				data: buildHistoricalTrackSegmentCollection(
+					store.selectedTrackPoints,
+					store.selectedFlightId ?? "",
+				),
+			});
+		}
+		if (!mapInstance.getLayer(TRACK_HISTORY_SEG_LAYER_ID)) {
+			mapInstance.addLayer({
+				id: TRACK_HISTORY_SEG_LAYER_ID,
+				type: "line",
+				source: MAP_TRACK_SEG_SOURCE_ID,
+				layout: { "line-cap": "round", "line-join": "round" },
+				paint: historicalTrackSegmentLinePaint(),
+			});
+		}
+
+		// ── Region filter highlight — 行政区划边界（置于地图标注之下）──────────────────
 		if (!mapInstance.getSource(MAP_REGION_HIGHLIGHT_SOURCE)) {
 			mapInstance.addSource(MAP_REGION_HIGHLIGHT_SOURCE, {
 				type: "geojson",
@@ -2072,7 +2232,7 @@
 					id: MAP_REGION_HIGHLIGHT_FILL_ID,
 					type: "fill",
 					source: MAP_REGION_HIGHLIGHT_SOURCE,
-					paint: { "fill-color": "#60a5fa", "fill-opacity": 0.06 },
+					paint: regionHighlightFillPaint(),
 				},
 				firstSymbolLayer?.id,
 			);
@@ -2083,12 +2243,7 @@
 					id: MAP_REGION_HIGHLIGHT_GLOW_ID,
 					type: "line",
 					source: MAP_REGION_HIGHLIGHT_SOURCE,
-					paint: {
-						"line-color": "#93c5fd",
-						"line-width": 10,
-						"line-blur": 8,
-						"line-opacity": 0.3,
-					},
+					paint: regionHighlightGlowPaint(),
 				},
 				firstSymbolLayer?.id,
 			);
@@ -2099,11 +2254,7 @@
 					id: MAP_REGION_HIGHLIGHT_LINE_ID,
 					type: "line",
 					source: MAP_REGION_HIGHLIGHT_SOURCE,
-					paint: {
-						"line-color": "#60a5fa",
-						"line-width": 2,
-						"line-opacity": 0.9,
-					},
+					paint: regionHighlightLinePaint(),
 				},
 				firstSymbolLayer?.id,
 			);
@@ -2152,7 +2303,7 @@
 			);
 		}
 
-		// 飞机图标图层 — 插入在地图标注层之前，使城市/路名标注始终可见
+		// 飞机图标图层 — 在天气/网格之上、枢纽之下；标注层仍在其上
 		if (!mapInstance.getLayer(MAP_LAYER_ID)) {
 			mapInstance.addLayer(
 				{
@@ -2160,35 +2311,158 @@
 					type: "symbol",
 					source: MAP_SOURCE_ID,
 					layout: {
-						"icon-image": [
-							"case",
-							[">", ["coalesce", ["get", "altitude_ft"], 0], 100],
-							"icon-plane",
-							"icon-plane-ground",
-						],
-						"icon-size": [
-							"interpolate",
-							["linear"],
-							["zoom"],
-							3,
-							0.06,
-							6,
-							0.1,
-							10,
-							0.15,
-							14,
-							0.2,
-						],
+						"icon-image": flightIconImageLayout(),
+						"icon-size": flightIconSizeLayout(),
 						"icon-rotate": ["coalesce", ["get", "heading"], 0],
 						"icon-rotation-alignment": "map",
 						"icon-pitch-alignment": "viewport",
 						"icon-allow-overlap": true,
 						"icon-ignore-placement": true,
 					},
+					paint: {
+						"icon-halo-color": "rgba(20, 15, 8, 0.92)",
+						"icon-halo-width": 1.25,
+						"icon-opacity": 1,
+					},
+				},
+				firstSymbolLayer?.id,
+			);
+		} else {
+			mapInstance.setLayoutProperty(
+				MAP_LAYER_ID,
+				"icon-image",
+				flightIconImageLayout(),
+			);
+			mapInstance.setLayoutProperty(
+				MAP_LAYER_ID,
+				"icon-size",
+				flightIconSizeLayout(),
+			);
+		}
+
+		if (!mapInstance.getLayer(MAP_FLIGHT_HOVER_ICON_LAYER_ID)) {
+			mapInstance.addLayer({
+				id: MAP_FLIGHT_HOVER_ICON_LAYER_ID,
+				type: "symbol",
+				source: MAP_SOURCE_ID,
+				filter: FEATURE_STATE_HOVER,
+				layout: {
+					"icon-image": flightHoverIconImageLayout(),
+					"icon-size": flightIconSizeLayout(),
+					"icon-rotate": ["coalesce", ["get", "heading"], 0],
+					"icon-rotation-alignment": "map",
+					"icon-pitch-alignment": "viewport",
+					"icon-allow-overlap": true,
+					"icon-ignore-placement": true,
+				},
+				paint: {
+					"icon-halo-color": "rgba(20, 15, 8, 0.92)",
+					"icon-halo-width": 1.25,
+					"icon-opacity": 1,
+				},
+			});
+		}
+
+		// 枢纽机场 — 高饱和实心圆 + 黄字黑 halo，置于飞机之上
+		if (!mapInstance.getLayer(MAP_AIRPORT_LAYER_ID)) {
+			mapInstance.addLayer(
+				{
+					id: MAP_AIRPORT_LAYER_ID,
+					type: "circle",
+					source: MAP_AIRPORT_SOURCE_ID,
+					filter: ["!=", ["get", "point_type"], "grid"],
+					layout: {
+						visibility: showHubAirports.value ? "visible" : "none",
+					},
+					paint: hubAirportCirclePaint(),
 				},
 				firstSymbolLayer?.id,
 			);
 		}
+		if (!mapInstance.getLayer(MAP_AIRPORT_HIGHLIGHT_LAYER_ID)) {
+			mapInstance.addLayer({
+				id: MAP_AIRPORT_HIGHLIGHT_LAYER_ID,
+				type: "circle",
+				source: MAP_AIRPORT_HIGHLIGHT_SOURCE_ID,
+				paint: routeAirportHighlightPaint(),
+			});
+		}
+
+		applyPremiumOverlayStyles(mapInstance, currentProvider.value);
+
+		// ── 文字标注层：一律不加 beforeId，创建后再统一抬到栈顶 ────────────────
+		if (!mapInstance.getLayer(MAP_WIND_ARROW_LAYER_ID)) {
+			mapInstance.addLayer({
+				id: MAP_WIND_ARROW_LAYER_ID,
+				type: "symbol",
+				source: MAP_WIND_SOURCE_ID,
+				layout: {
+					visibility: showWindLayer.value ? "visible" : "none",
+					...windArrowLayout(),
+				},
+				paint: windArrowPaint(),
+			});
+		}
+
+		if (!mapInstance.getLayer(MAP_WIND_LABEL_LAYER_ID)) {
+			mapInstance.addLayer({
+				id: MAP_WIND_LABEL_LAYER_ID,
+				type: "symbol",
+				source: MAP_WIND_SOURCE_ID,
+				layout: {
+					visibility: showWindLayer.value ? "visible" : "none",
+					...windLabelLayout(),
+				},
+				paint: windLabelPaint(),
+			});
+		}
+
+		if (!mapInstance.getLayer(MAP_AIRPORT_LABEL_LAYER_ID)) {
+			mapInstance.addLayer({
+				id: MAP_AIRPORT_LABEL_LAYER_ID,
+				type: "symbol",
+				source: MAP_AIRPORT_SOURCE_ID,
+				layout: {
+					visibility: showHubAirports.value ? "visible" : "none",
+					...hubAirportLabelLayout(),
+				},
+				paint: hubAirportLabelPaint(),
+			});
+		}
+
+		if (!mapInstance.getLayer(MAP_AIRPORT_HIGHLIGHT_LABEL_ID)) {
+			mapInstance.addLayer({
+				id: MAP_AIRPORT_HIGHLIGHT_LABEL_ID,
+				type: "symbol",
+				source: MAP_AIRPORT_HIGHLIGHT_SOURCE_ID,
+				layout: {
+					visibility: "none",
+					...hubAirportHighlightLabelLayout(),
+				},
+				paint: hubAirportLabelPaint(),
+			});
+		}
+
+		if (!mapInstance.getLayer(MAP_HOVER_LABEL_LAYER_ID)) {
+			mapInstance.addLayer({
+				id: MAP_HOVER_LABEL_LAYER_ID,
+				type: "symbol",
+				source: MAP_HOVER_SOURCE_ID,
+				layout: {
+					...flightHoverLabelLayout(),
+					visibility: "visible",
+					"symbol-placement": "point",
+				},
+				paint: flightHoverLabelPaint(),
+			});
+		}
+
+		scheduleOverlayLayerOrder(mapInstance);
+		applyMapMarkerLabelStyles(mapInstance);
+		syncEnvironmentalOverlayMode();
+		syncHubHighlightVisibility();
+		bindHubZoomListener(mapInstance);
+		bindFlightHoverHandlers(mapInstance);
 
 		// Events
 		mapInstance.on("click", MAP_LAYER_ID, (event) => {
@@ -2196,121 +2470,165 @@
 			if (!feature || feature.geometry.type !== "Point") return;
 			const flightId = feature.properties?.flight_id;
 			if (typeof flightId === "string") handleSelectFlight(flightId);
-			new maplibregl.Popup({ offset: 12 })
-				.setLngLat(feature.geometry.coordinates as [number, number])
-				.setHTML(
-					createPopupHtml(
-						(feature.properties ?? {}) as Record<string, unknown>,
-					),
-				)
-				.addTo(mapInstance);
-		});
-		mapInstance.on("mouseenter", MAP_LAYER_ID, () => {
-			mapInstance.getCanvas().style.cursor = "pointer";
-		});
-		mapInstance.on("mouseleave", MAP_LAYER_ID, () => {
-			mapInstance.getCanvas().style.cursor = "";
 		});
 
 		const handleAirportPointClick = (event: maplibregl.MapLayerMouseEvent) => {
+			if (!showHubAirports.value) return;
 			const feature = event.features?.[0];
 			if (!feature) return;
 			const iata = feature.properties?.iata as string | undefined;
 			if (!iata) return;
-			if (!iata.startsWith("GRD_")) {
-				store.scheduleAirport = iata;
+			if (
+				selectedHubIata.value === iata &&
+				store.scheduleAirport === iata
+			) {
+				clearHubFocus();
+				return;
 			}
+			selectedHubIata.value = iata;
+			void store.loadSchedules(iata, "dep");
+			contextTab.value = "schedule";
+			syncContextPanel();
 		};
 		mapInstance.on("click", MAP_AIRPORT_LAYER_ID, handleAirportPointClick);
-		mapInstance.on("click", MAP_GRID_LAYER_ID, handleAirportPointClick);
 		mapInstance.on("mouseenter", MAP_AIRPORT_LAYER_ID, () => {
 			mapInstance.getCanvas().style.cursor = "pointer";
 		});
 		mapInstance.on("mouseleave", MAP_AIRPORT_LAYER_ID, () => {
 			mapInstance.getCanvas().style.cursor = "";
 		});
-		mapInstance.on("mouseenter", MAP_GRID_LAYER_ID, () => {
+
+
+		const handleGridCellClick = (event: maplibregl.MapLayerMouseEvent) => {
+			const feature = event.features?.[0];
+			if (!feature) return;
+			const props = feature.properties ?? {};
+			const id = String(props.id ?? "天气网格");
+			const flightCount = Number(props.flight_count ?? 0);
+			const hasWeather = Boolean(props.has_weather);
+			const temp = props.temperature_c;
+			const desc = String(props.description ?? "").trim();
+			let weatherLine = "天气：尚未采集（等待环境层轮询）";
+			if (hasWeather) {
+				const parts: string[] = [];
+				if (temp != null && temp !== "") parts.push(`${temp}°C`);
+				if (desc) parts.push(desc);
+				weatherLine = `天气：${parts.join(" ") || "已采集"}`;
+			}
+			if (!gridPopup) {
+				gridPopup = new maplibregl.Popup({ closeButton: true, maxWidth: "300px" });
+			}
+			gridPopup
+				.setLngLat(event.lngLat)
+				.setHTML(
+					`<div style="font-size:13px;line-height:1.55"><div><strong>${id}</strong></div><div>范围内航班：${flightCount} 架</div><div>${weatherLine}</div></div>`.replaceAll(
+						"div",
+						"div",
+					),
+				)
+				.addTo(mapInstance);
+		};
+		mapInstance.on("click", MAP_GRID_FILL_LAYER_ID, handleGridCellClick);
+		mapInstance.on("mouseenter", MAP_GRID_FILL_LAYER_ID, () => {
 			mapInstance.getCanvas().style.cursor = "pointer";
 		});
-		mapInstance.on("mouseleave", MAP_GRID_LAYER_ID, () => {
+		mapInstance.on("mouseleave", MAP_GRID_FILL_LAYER_ID, () => {
 			mapInstance.getCanvas().style.cursor = "";
 		});
 	}
 
-	// flights 数组由 WS 整体替换（浅变更），无需 deep watch
-	// 防抖 1.5s：WS 推送间隔约 90s，防抖主要防止 WS+初始加载同时触发
+	// WS 快照：较长防抖；筛选变化：立即合并到同一 RAF 批次
 	watch(
 		() => store.flights,
-		(newFlights) => {
-			if (_flightUpdateTimer !== null) clearTimeout(_flightUpdateTimer);
-			_flightUpdateTimer = setTimeout(() => {
-				_flightUpdateTimer = null;
-				updateFlightLayer(newFlights);
-			}, 1500);
+		() => {
+			if (map.value) clearFlightHover(map.value);
+			scheduleFlightLayerUpdate(1200);
 		},
 	);
 
-	/** 更新国家/地区选择的边界高亮框 */
-	function updateRegionHighlight(cc: string | null, regionCode: string | null) {
+	watch(
+		() => [store.filteredFlights, store.filtersActive] as const,
+		() => {
+			if (map.value) clearFlightHover(map.value);
+			scheduleFlightLayerUpdate(0);
+		},
+	);
+
+	watch(
+		() => [...store.markedFlightIds],
+		() => {
+			if (!map.value) return;
+			if (
+				hoveredFlightId &&
+				!store.markedFlightIds.includes(hoveredFlightId)
+			) {
+				clearFlightHover(map.value);
+			}
+			syncMapFlightHighlights();
+			if (store.filtersActive) {
+				scheduleFlightLayerUpdate(0);
+			}
+		},
+	);
+
+	let regionHighlightRequest = 0;
+
+	/** 按行政区划真实边界高亮并适配视野（中国 DataV / 美国州界；其余回退 bbox） */
+	async function applyRegionFilterHighlight(
+		cc: string | null,
+		regionCode: string | null,
+		cityCode: string | null,
+		districtCode: string | null,
+	) {
 		if (!map.value) return;
 		const src = map.value.getSource(MAP_REGION_HIGHLIGHT_SOURCE) as
 			| GeoJSONSource
 			| undefined;
 		if (!src) return;
+
 		if (!cc) {
 			src.setData({ type: "FeatureCollection", features: [] });
 			return;
 		}
-		const country = COUNTRIES.find((c) => c.code === cc);
-		if (!country) return;
-		const b =
-			regionCode != null
-				? (country.regions?.find((r) => r.code === regionCode) ?? country)
-				: country;
-		src.setData({
-			type: "FeatureCollection",
-			features: [
-				{
-					type: "Feature",
-					properties: {},
-					geometry: {
-						type: "Polygon",
-						coordinates: [
-							[
-								[b.lonMin, b.latMin],
-								[b.lonMax, b.latMin],
-								[b.lonMax, b.latMax],
-								[b.lonMin, b.latMax],
-								[b.lonMin, b.latMin],
-							],
-						],
-					},
-				},
-			],
-		});
+
+		const reqId = ++regionHighlightRequest;
+		try {
+			const geometry = await resolveRegionBoundaryGeometry(
+				cc,
+				regionCode,
+				cityCode,
+				districtCode,
+			);
+			if (reqId !== regionHighlightRequest) return;
+			src.setData({
+				type: "FeatureCollection",
+				features: [geometryToFeature(geometry)],
+			});
+			const bounds = bboxFromGeometry(geometry);
+			if (bounds) {
+				map.value.fitBounds(bounds as LngLatBoundsLike, {
+					padding: 48,
+					maxZoom: 10,
+					duration: 800,
+					essential: true,
+				});
+			}
+		} catch {
+			if (reqId !== regionHighlightRequest) return;
+			src.setData({ type: "FeatureCollection", features: [] });
+		}
 	}
 
-	// 国家/地区筛选时自动聚焦地图视野 + 边界高亮
 	watch(
-		[() => store.filterCountry, () => store.filterRegion],
-		([cc, region]) => {
-			updateRegionHighlight(cc, region);
-			if (!map.value || !cc) return;
-			const country = COUNTRIES.find((c) => c.code === cc);
-			if (!country) return;
-			const bbox =
-				region != null
-					? (country.regions?.find((r) => r.code === region) ?? country)
-					: country;
-			map.value.fitBounds(
-				[
-					bbox.lonMin,
-					bbox.latMin,
-					bbox.lonMax,
-					bbox.latMax,
-				] as LngLatBoundsLike,
-				{ padding: 60, maxZoom: 8, essential: true },
-			);
+		() =>
+			[
+				store.filterCountry,
+				store.filterRegion,
+				store.filterCity,
+				store.filterDistrict,
+			] as const,
+		([cc, region, city, district]) => {
+			void applyRegionFilterHighlight(cc, region, city, district);
 		},
 	);
 
@@ -2324,9 +2642,17 @@
 	);
 
 	watch(
+		() => store.selectedFlightId,
+		() => {
+			updateRouteLayer();
+		},
+	);
+
+	watch(
 		() => store.selectedTrackPoints,
 		() => {
 			updateTrackLayer();
+			updateRouteLayer();
 		},
 	);
 
@@ -2338,32 +2664,38 @@
 		},
 	);
 
+	let _hubDataTimer: ReturnType<typeof setTimeout> | null = null;
 	watch(
-		() => store.airports,
-		(list) => {
-			if (!map.value) return;
-			const src = map.value.getSource(MAP_AIRPORT_SOURCE_ID) as
-				| GeoJSONSource
-				| undefined;
-			src?.setData(toAirportGeoJson(list));
-			updateRouteLayer();
+		() => [store.airports, store.flights.length] as const,
+		() => {
+			if (_hubDataTimer !== null) clearTimeout(_hubDataTimer);
+			_hubDataTimer = setTimeout(() => {
+				_hubDataTimer = null;
+				scheduleMapUpdate(() => {
+					updateHubAirportLayer();
+					updateRouteLayer();
+				});
+			}, 500);
 		},
 	);
 
-	// AQI 图层显示/隐藏
+	// AQI：FA 式连续场（热力图为主，离散点仅高 zoom 辅助）
 	watch(
 		() => store.showAqiLayer,
 		(show) => {
-			if (!map.value) return;
-			const vis = show ? "visible" : "none";
-			setLayerVisibility(MAP_AQI_LAYER_ID, show);
-			setLayerVisibility(MAP_AQI_LABEL_LAYER_ID, show);
+			if (show) showAqiHeatmap.value = true;
+			setLayerVisibility(MAP_AQI_HEATMAP_LAYER_ID, show || showAqiHeatmap.value);
+			setLayerVisibility(MAP_AQI_LAYER_ID, false);
+			setLayerVisibility(MAP_AQI_LABEL_LAYER_ID, false);
+			syncEnvironmentalOverlayMode();
+			if (map.value) ensureOverlayLayerOrder(map.value);
 		},
 	);
 
-	// AQI 热力图
 	watch(showAqiHeatmap, (show) => {
-		setLayerVisibility(MAP_AQI_HEATMAP_LAYER_ID, show);
+		setLayerVisibility(MAP_AQI_HEATMAP_LAYER_ID, show || store.showAqiLayer);
+		syncEnvironmentalOverlayMode();
+		if (map.value) ensureOverlayLayerOrder(map.value);
 	});
 
 	// 风速风向图层
@@ -2372,57 +2704,82 @@
 		updateWeatherLayer();
 		setLayerVisibility(MAP_WIND_ARROW_LAYER_ID, show);
 		setLayerVisibility(MAP_WIND_LABEL_LAYER_ID, show);
+		syncEnvironmentalOverlayMode();
+		if (map.value) {
+			scheduleOverlayLayerOrder(map.value);
+			applyMapMarkerLabelStyles(map.value);
+		}
 	});
 
-	// 温度图层
+	// 温度图层（连续温度场热力图，非离散气泡）
 	watch(showTempLayer, async (show) => {
 		if (show && weatherHubs.value.length === 0) await loadWeatherHubs();
 		updateWeatherLayer();
-		setLayerVisibility(MAP_TEMP_LAYER_ID, show);
+		setLayerVisibility(MAP_TEMP_HEATMAP_LAYER_ID, show);
+		setLayerVisibility(MAP_TEMP_LAYER_ID, false);
+		syncEnvironmentalOverlayMode();
+		if (map.value) ensureOverlayLayerOrder(map.value);
 	});
 
 	// 航班密度热力图
 	watch(showDensityLayer, (show) => {
 		setLayerVisibility(MAP_DENSITY_LAYER_ID, show);
+		syncEnvironmentalOverlayMode();
+		if (map.value) ensureOverlayLayerOrder(map.value);
 	});
 
 	// 枢纽机场与网格观测点分层开关
 	watch(showHubAirports, (show) => {
+		if (!show) clearHubFocus();
 		setLayerVisibility(MAP_AIRPORT_LAYER_ID, show);
 		setLayerVisibility(MAP_AIRPORT_LABEL_LAYER_ID, show);
+		syncHubHighlightVisibility();
+		if (map.value && show) applyMapMarkerLabelStyles(map.value);
+		if (map.value) ensureOverlayLayerOrder(map.value);
 	});
 	watch(showGridPoints, (show) => {
-		setLayerVisibility(MAP_GRID_LAYER_ID, show);
-		setLayerVisibility(MAP_GRID_LABEL_LAYER_ID, show);
+		const mapInstance = map.value;
+		if (mapInstance) {
+			ensureWeatherGridLayers(mapInstance);
+		}
+		setLayerVisibility(MAP_GRID_FILL_LAYER_ID, show);
+		setLayerVisibility(MAP_GRID_LINE_LAYER_ID, show);
+		setLayerVisibility(MAP_GRID_MARKER_LAYER_ID, show);
+		syncEnvironmentalOverlayMode();
+		if (mapInstance) ensureOverlayLayerOrder(mapInstance);
+		if (show) {
+			void refreshWeatherGrid(false);
+			startGridRefresh();
+		} else {
+			stopGridRefresh();
+		}
 	});
 
-	// AQI 数据更新
 	watch(
-		() => store.airQualityData,
+		() => store.flights.length,
 		() => {
-			updateAqiLayer();
+			if (!showGridPoints.value) return;
+			if (_gridFlightRefreshTimer !== null) {
+				clearTimeout(_gridFlightRefreshTimer);
+			}
+			_gridFlightRefreshTimer = setTimeout(() => {
+				_gridFlightRefreshTimer = null;
+				void refreshWeatherGrid(false);
+			}, 1500);
 		},
-		{ deep: true },
 	);
 
-	// 语言设置变化时重新应用双语标注
-	watch([labelLines, labelLine1, labelLine2], () => {
-		if (map.value) applyBilingualLabels(map.value);
-	});
+	// AQI 数据更新（浅监听，避免 deep watch 全量扫描）
+	watch(
+		() => store.airQualityData.length,
+		() => {
+			scheduleMapUpdate(() => updateAqiLayer());
+		},
+	);
 
-	// 飞机颜色预设变化时刷新 icon（无需重载底图）
-	// 加入防抖避免快速切换导致并发问题
-	watch(aircraftColorPresetId, () => {
-		if (_aircraftColorUpdateTimer !== null)
-			clearTimeout(_aircraftColorUpdateTimer);
-		_aircraftColorUpdateTimer = setTimeout(async () => {
-			if (!map.value) return;
-			try {
-				await refreshAircraftIcons(map.value);
-			} catch (err) {
-				console.error("[Aircraft Color Watch] 刷新失败", err);
-			}
-		}, 100);
+	// 语言设置变化时重新应用双语标注（防抖，避免连续 setLayoutProperty）
+	watch([labelLines, labelLine1, labelLine2], () => {
+		scheduleBilingualLabels();
 	});
 
 	// 选中航班时自动切换到详情 tab
@@ -2430,30 +2787,24 @@
 		() => store.detailLoading,
 		(loading) => {
 			if (loading) {
-				panelCollapsed.value = false;
 				contextTab.value = "detail";
+				syncContextPanel();
 			}
 		},
 	);
 
-	// 点击机场时自动切换到时刻表 tab
+	watch(selectedHubIata, () => {
+		updateAirportHighlight();
+	});
 	watch(
 		() => store.scheduleAirport,
-		(iata) => {
-			if (iata) {
-				panelCollapsed.value = false;
-				contextTab.value = "schedule";
-			} else {
-				contextTab.value = "flights";
-			}
+		() => {
+			updateAirportHighlight();
 		},
 	);
 
-	// 面板折叠后 resize 地图
-	watch(panelCollapsed, async () => {
-		await nextTick();
-		setTimeout(() => map.value?.resize(), 220);
-	});
+	watch(contextPanelOpen, () => syncContextPanel());
+	watch(sidebarCollapsed, () => onSidebarCollapse());
 
 	onMounted(async () => {
 		initMap();
@@ -2470,6 +2821,24 @@
 			clearTimeout(_flightUpdateTimer);
 			_flightUpdateTimer = null;
 		}
+		if (_hubZoomTimer !== null) {
+			clearTimeout(_hubZoomTimer);
+			_hubZoomTimer = null;
+		}
+		if (_hubDataTimer !== null) {
+			clearTimeout(_hubDataTimer);
+			_hubDataTimer = null;
+		}
+		if (_labelApplyTimer !== null) {
+			clearTimeout(_labelApplyTimer);
+			_labelApplyTimer = null;
+		}
+		cancelScheduledMapUpdates();
+		resetFlightFeatureStateTracking();
+		flightFeatureIndex = null;
+		flightHoverHandlersBound = false;
+		overlayOrderIdlePending = false;
+		stopGridRefresh();
 		store.disconnectSocket();
 		map.value?.remove();
 		map.value = null;
@@ -2477,8 +2846,7 @@
 </script>
 
 <style scoped>
-	/* ── 根布局：纵向弹性列 */
-	.layout {
+	.map-layout {
 		height: 100%;
 		display: flex;
 		flex-direction: column;
@@ -2486,295 +2854,26 @@
 		overflow: hidden;
 	}
 
-	/* ── 任务栏 */
-	.task-bar {
-		height: 44px;
-		flex-shrink: 0;
-		display: flex;
-		align-items: center;
-		padding: 0 10px;
-		gap: 6px;
-		background: var(--bg-surface);
-		border-bottom: 1px solid var(--border);
-		z-index: 20;
-	}
-
-	.tb-left,
-	.tb-right {
-		display: flex;
-		align-items: center;
-		gap: 4px;
-	}
-
-	.tb-center {
-		flex: 1;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 8px;
-	}
-
-	.tb-right {
-		margin-left: auto;
-	}
-
-	.tb-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 5px;
-		padding: 4px 10px;
-		background: var(--bg-raised);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-md);
-		color: var(--text-secondary);
-		font-size: 12px;
-		font-weight: 500;
-		cursor: pointer;
-		transition: all var(--t-fast);
-	}
-
-	.tb-btn:hover {
-		background: var(--border);
-		color: var(--text-primary);
-	}
-
-	.tb-btn.active {
-		background: var(--accent-subtle);
-		color: var(--accent);
-		border-color: var(--accent);
-	}
-
-	.tb-icon {
-		width: 13px;
-		height: 13px;
-		flex-shrink: 0;
-	}
-
-	.tb-stat {
-		display: flex;
-		align-items: baseline;
-		gap: 3px;
-	}
-
-	.tb-num {
-		font-size: 15px;
-		font-weight: 700;
-		color: var(--text-primary);
-		font-variant-numeric: tabular-nums;
-	}
-
-	.tb-label {
-		font-size: 10px;
-		color: var(--text-muted);
-		text-transform: uppercase;
-	}
-
-	.tb-air .tb-num {
-		color: var(--accent);
-	}
-	.tb-gnd .tb-num {
-		color: var(--text-secondary);
-	}
-
-	.tb-sep {
-		color: var(--border-strong);
-		font-size: 12px;
-	}
-
-	/* ── 工作区：横向弹性行 */
-	.work-area {
+	.map-workspace {
 		flex: 1;
 		display: flex;
 		min-height: 0;
 		overflow: hidden;
 	}
 
-	/* ── 图层抽屉（从左滑入） */
-	.layer-drawer {
-		width: 0;
-		flex-shrink: 0;
-		overflow: hidden;
-		transition: width var(--t-base);
-		background: var(--bg-surface);
-		border-right: 1px solid var(--border);
-		display: flex;
-		flex-direction: column;
-	}
-
-	.layer-drawer.open {
-		width: 236px;
-	}
-
-	.drawer-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 10px 12px 8px;
-		border-bottom: 1px solid var(--border);
-		flex-shrink: 0;
-	}
-
-	.drawer-title {
-		font-size: 12px;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: var(--text-secondary);
-	}
-
-	.drawer-close {
-		width: 22px;
-		height: 22px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: none;
-		border: none;
-		color: var(--text-muted);
-		cursor: pointer;
-		border-radius: var(--radius-sm);
-		padding: 0;
-	}
-
-	.drawer-close svg {
-		width: 10px;
-		height: 10px;
-	}
-
-	.drawer-close:hover {
-		background: var(--bg-raised);
-		color: var(--text-primary);
-	}
-
-	.drawer-body {
-		flex: 1;
-		overflow-y: auto;
-		padding: 12px;
-	}
-
-	/* ── 共用面板区块 */
-	.panel-section {
-		margin-bottom: 14px;
-	}
-
-	.panel-section:last-child {
-		margin-bottom: 0;
-	}
-
-	.panel-title {
-		font-size: 11px;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: var(--text-muted);
-		margin-bottom: 8px;
-	}
-
-	.style-grid {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 5px;
-	}
-
-	.style-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		padding: 4px 8px;
-		border: 1px solid var(--border-strong);
-		border-radius: var(--radius-sm);
-		background: var(--bg-raised);
-		color: var(--text-secondary);
-		font-size: 11px;
-		cursor: pointer;
-		transition: all var(--t-fast);
-	}
-
-	.style-btn:hover {
-		background: var(--border);
-		color: var(--text-primary);
-	}
-
-	.style-btn.active {
-		background: var(--accent);
-		border-color: var(--accent);
-		color: #fff;
-	}
-
-	.aircraft-color-chip {
-		width: 10px;
-		height: 10px;
-		border-radius: 999px;
-		border: 1px solid rgba(255, 255, 255, 0.35);
-		flex-shrink: 0;
-	}
-
-	.layer-toggle {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		margin-bottom: 6px;
-		font-size: 12px;
-		color: var(--text-secondary);
-		cursor: pointer;
-		user-select: none;
-	}
-
-	.layer-toggle input[type="checkbox"] {
-		accent-color: var(--accent);
-	}
-
-	.panel-note {
-		font-size: 11px;
-		color: var(--warning);
-		margin-top: 4px;
-	}
-
-	.label-row {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		margin-top: 6px;
-	}
-
-	.label-sub {
-		font-size: 11px;
-		color: var(--text-secondary);
-		min-width: 36px;
-		flex-shrink: 0;
-	}
-
-	.lang-select {
-		flex: 1;
-		font-size: 12px;
-		padding: 3px 6px;
-		border-radius: var(--radius-sm);
-		border: 1px solid var(--border);
-		background: var(--bg-raised);
-		color: var(--text-primary);
-		cursor: pointer;
-		outline: none;
-	}
-
-	.lang-select:focus {
-		border-color: var(--accent);
-	}
-
-	/* ── Fallback toast */
 	.fallback-toast {
 		position: fixed;
-		top: 60px;
+		top: calc(var(--nav-h) + 8px);
 		left: 50%;
 		transform: translateX(-50%);
 		z-index: 1000;
-		background: rgba(180, 83, 9, 0.93);
+		background: var(--warning);
 		color: #fff;
 		padding: 10px 20px;
 		border-radius: var(--radius-lg);
 		font-size: 13px;
 		cursor: pointer;
-		backdrop-filter: blur(6px);
-		box-shadow: var(--shadow-md);
+		box-shadow: var(--shadow-panel);
 		max-width: 480px;
 		text-align: center;
 	}
@@ -2789,14 +2888,15 @@
 	.toast-enter-from,
 	.toast-leave-to {
 		opacity: 0;
-		transform: translateX(-50%) translateY(-16px);
+		transform: translateX(-50%) translateY(-12px);
 	}
 
-	/* ── 地图 */
 	.map-shell {
 		flex: 1;
 		position: relative;
 		min-width: 0;
+		background: #0f1419;
+		contain: layout;
 	}
 
 	.map-canvas {
@@ -2807,86 +2907,29 @@
 	.map-status {
 		position: absolute;
 		left: 16px;
-		bottom: 16px;
+		bottom: 48px;
 		padding: 8px 12px;
 		border-radius: var(--radius-md);
-		background: var(--bg-overlay);
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
 		color: var(--text-primary);
 		font-size: 13px;
-		backdrop-filter: blur(4px);
+		box-shadow: var(--shadow-sm);
 	}
 
-	/* ── 右侧上下文面板 */
-	.context-panel {
-		width: var(--panel-w);
-		flex-shrink: 0;
-		display: flex;
-		flex-direction: column;
-		overflow: hidden;
+
+	:global(.maplibregl-ctrl-bottom-left) {
+		left: 12px;
+		bottom: 12px;
+	}
+
+	:global(.maplibregl-ctrl-bottom-left .maplibregl-ctrl-scale) {
+		border: 1px solid var(--border);
+		border-top: 2px solid var(--text-muted);
 		background: var(--bg-surface);
-		border-left: 1px solid var(--border);
-		transition: width var(--t-base);
-	}
-
-	.context-panel.collapsed {
-		width: 0;
-	}
-
-	.cp-tabs {
-		display: flex;
-		align-items: center;
-		flex-shrink: 0;
-		border-bottom: 1px solid var(--border);
-		background: var(--bg-surface);
-		padding: 0 4px;
-	}
-
-	.cp-tab {
-		display: inline-flex;
-		align-items: center;
-		gap: 5px;
-		padding: 8px 12px;
-		background: none;
-		border: none;
-		border-bottom: 2px solid transparent;
 		color: var(--text-secondary);
-		font-size: 12px;
-		font-weight: 500;
-		cursor: pointer;
-		white-space: nowrap;
-		margin-bottom: -1px;
-		transition:
-			color var(--t-fast),
-			border-color var(--t-fast);
-	}
-
-	.cp-tab:hover {
-		color: var(--text-primary);
-	}
-
-	.cp-tab.active {
-		color: var(--accent);
-		border-bottom-color: var(--accent);
-	}
-
-	.cp-badge {
-		padding: 1px 6px;
-		background: var(--bg-raised);
-		border-radius: 999px;
-		font-size: 10px;
-		color: var(--text-muted);
-	}
-
-	.cp-tab.active .cp-badge {
-		background: var(--accent-subtle);
-		color: var(--accent);
-	}
-
-	.cp-body {
-		flex: 1;
-		min-height: 0;
-		display: flex;
-		flex-direction: column;
-		overflow: hidden;
+		font-size: 11px;
+		padding: 2px 6px;
+		border-radius: var(--radius-sm);
 	}
 </style>
