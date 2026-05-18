@@ -277,9 +277,7 @@
 			},
 			yAxis: {
 				type: "value",
-				name: t("stats.axisCount"),
-				nameLocation: "middle",
-				nameGap: 36,
+
 				...valueAxisOpts(),
 			},
 			series: [
@@ -316,9 +314,7 @@
 			},
 			yAxis: {
 				type: "value",
-				name: t("stats.axisCount"),
-				nameLocation: "middle",
-				nameGap: 36,
+
 				...valueAxisOpts(),
 			},
 			series: [
