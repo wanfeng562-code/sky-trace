@@ -12,11 +12,15 @@ GET /debug/api-monitor           → HTML dashboard (auto-refreshes every 10 s)
 
 from __future__ import annotations
 
+import asyncio
+import time
+
 from fastapi import APIRouter, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.models.schemas import ApiResponse
 from app.state import unified_pipeline
+from app.core.config import settings
 
 router = APIRouter(tags=["api-monitor"])
 
@@ -35,6 +39,82 @@ async def api_monitor_dashboard(
 ) -> HTMLResponse:
     html = _MONITOR_HTML.replace("__AUTO_REFRESH_MS__", str(auto_refresh_ms))
     return HTMLResponse(content=html)
+
+
+@router.get("/debug/fr24-test")
+async def fr24_test_endpoint() -> JSONResponse:
+    """Diagnose FR24 data source: check package install, proxy config, and run a live zone query.
+
+    Returns JSON with keys:
+    - package_installed: bool
+    - proxy_configured: bool
+    - proxy_url: str (masked)
+    - pipeline_disabled: bool
+    - pipeline_cache_count: int
+    - live_test: {zone, flights_returned, elapsed_s, error}
+    """
+    result: dict = {}
+
+    # 1. Check package
+    try:
+        from FlightRadar24 import FlightRadar24API  # type: ignore[import]
+        result["package_installed"] = True
+    except ImportError as e:
+        result["package_installed"] = False
+        result["package_error"] = str(e)
+        result["proxy_configured"] = bool(settings.fr24_proxy_url.strip())
+        result["pipeline_disabled"] = unified_pipeline._fr24_disabled
+        result["pipeline_cache_count"] = len(unified_pipeline._fr24_cache)
+        result["live_test"] = None
+        return JSONResponse(content=result)
+
+    # 2. Proxy config
+    proxy_url = settings.fr24_proxy_url.strip()
+    result["proxy_configured"] = bool(proxy_url)
+    # Mask middle of URL for display
+    if proxy_url:
+        if len(proxy_url) > 40:
+            result["proxy_url_preview"] = proxy_url[:20] + "..." + proxy_url[-15:]
+        else:
+            result["proxy_url_preview"] = proxy_url
+    else:
+        result["proxy_url_preview"] = "(not set)"
+
+    # 3. Pipeline state
+    result["pipeline_disabled"] = unified_pipeline._fr24_disabled
+    result["pipeline_cache_count"] = len(unified_pipeline._fr24_cache)
+
+    # 4. Live zone test — query the first zone synchronously in a thread
+    test_zone = {"tl_y": 52.0, "br_y": 48.0, "tl_x": 0.0, "br_x": 8.0}  # Western Europe
+    test_result: dict = {"zone": "52,48,0,8 (Western Europe)"}
+    try:
+        loop = asyncio.get_event_loop()
+
+        def _do_query():
+            fr = FlightRadar24API(proxy_url=proxy_url if proxy_url else None)
+            bounds = fr.get_bounds(test_zone)
+            t0 = time.monotonic()
+            flights = fr.get_flights(bounds=bounds)
+            elapsed = time.monotonic() - t0
+            return flights, elapsed
+
+        flights, elapsed = await asyncio.wait_for(
+            loop.run_in_executor(None, _do_query), timeout=30.0
+        )
+        test_result["flights_returned"] = len(flights)
+        test_result["elapsed_s"] = round(elapsed, 2)
+        test_result["error"] = None
+    except asyncio.TimeoutError:
+        test_result["flights_returned"] = 0
+        test_result["elapsed_s"] = None
+        test_result["error"] = "Timeout (30s)"
+    except Exception as e:
+        test_result["flights_returned"] = 0
+        test_result["elapsed_s"] = None
+        test_result["error"] = str(e)
+
+    result["live_test"] = test_result
+    return JSONResponse(content=result)
 
 
 # ---------------------------------------------------------------------------

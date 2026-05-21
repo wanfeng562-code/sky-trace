@@ -290,6 +290,11 @@ class UnifiedDataPipeline:
                 "realtime": dict(self._status["realtime"]),
                 "environment": dict(self._status["environment"]),
                 "commercial": dict(self._status["commercial"]),
+                "fr24": {
+                    "proxy_configured": bool(settings.fr24_proxy_url.strip()),
+                    "disabled": self._fr24_disabled,
+                    "cache_count": len(self._fr24_cache),
+                },
             }
 
     async def get_weather_cache(self) -> dict[str, Any]:
