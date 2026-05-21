@@ -39,6 +39,8 @@ const CN_PROVINCE_ADCODE: Record<string, string> = {
 	QH: "630000",
 	NX: "640000",
 	XJ: "650000",
+	TW: "710000",
+	HK: "810000",
 	MO: "820000",
 };
 
@@ -441,7 +443,8 @@ export async function resolveRegionBoundaryGeometry(
 	cityCode: string | null,
 	districtCode: string | null,
 ): Promise<GeoJSON.Geometry> {
-	const key = cacheKey([countryCode, regionCode, cityCode, districtCode]);
+	// "r3" prefix busts any previously cached fallback-bbox results.
+	const key = cacheKey(["r3", countryCode, regionCode, cityCode, districtCode]);
 	const cached = recallBoundary(key);
 	if (cached) return cached;
 
@@ -449,27 +452,35 @@ export async function resolveRegionBoundaryGeometry(
 	const specific = hasSpecificSubArea(cityCode, districtCode);
 
 	let geom: GeoJSON.Geometry | null = null;
+	/** True when a remote fetch was attempted but failed (prevents caching the bbox fallback). */
+	let fetchFailed = false;
 
 	if (countryCode === "CN") {
 		const adcode = resolveCnAdcode(regionCode, cityCode, districtCode);
 		if (specific && bbox && !adcode) {
-			geom = bboxToPolygon(bbox);
+			geom = bboxToPolygon(bbox); // intentional bbox — no DataV entry for this sub-area
 		} else if (adcode) {
 			geom = await fetchDatavBoundary(adcode);
+			if (!geom) fetchFailed = true;
 		}
 	} else if (countryCode === "US" && regionCode && !specific) {
 		geom = await fetchAdmin1ByRegionCode(countryCode, regionCode, bbox);
 		if (!geom) geom = await fetchUsStateBoundary(regionCode);
+		if (!geom) fetchFailed = true;
 	} else if (regionCode && !specific) {
 		geom = await fetchAdmin1ByRegionCode(countryCode, regionCode, bbox);
+		if (!geom) fetchFailed = true;
 	} else if (!regionCode && !cityCode && !districtCode) {
 		if (countryCode === "CN") {
 			geom = await fetchDatavBoundary("100000");
+			if (!geom) fetchFailed = true;
 		} else {
 			geom = await fetchCountryAdmin1Outline(countryCode);
+			if (!geom) fetchFailed = true;
 		}
 	} else if (specific && bbox) {
 		geom = await fetchAdmin1ByRegionCode(countryCode, regionCode ?? "", bbox);
+		if (!geom) fetchFailed = true;
 	}
 
 	if (!geom && bbox) {
@@ -482,7 +493,12 @@ export async function resolveRegionBoundaryGeometry(
 	const result =
 		geom ??
 		bboxToPolygon({ latMin: -85, latMax: 85, lonMin: -180, lonMax: 180 });
-	return rememberBoundary(key, result);
+	// Only persist to cache when we got real boundary data.
+	// Fallback bbox is returned but not cached, allowing retry on next selection.
+	if (!fetchFailed) {
+		return rememberBoundary(key, result);
+	}
+	return result;
 }
 
 export function geometryToFeature(geometry: GeoJSON.Geometry): GeoJSON.Feature {
