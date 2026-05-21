@@ -141,7 +141,10 @@ function writeBoundaryToDisk(key: string, geom: GeoJSON.Geometry): void {
 	}
 }
 
-function rememberBoundary(key: string, geom: GeoJSON.Geometry): GeoJSON.Geometry {
+function rememberBoundary(
+	key: string,
+	geom: GeoJSON.Geometry,
+): GeoJSON.Geometry {
 	boundaryCache.set(key, geom);
 	writeBoundaryToDisk(key, geom);
 	return geom;
@@ -175,13 +178,18 @@ function bboxToPolygon(bbox: GeoBBox): GeoJSON.Polygon {
 function featureAdcode(feature: GeoJSON.Feature): string | null {
 	const p = feature.properties;
 	if (!p || typeof p !== "object") return null;
-	const raw = (p as Record<string, unknown>).adcode ?? (p as Record<string, unknown>).code;
+	const raw =
+		(p as Record<string, unknown>).adcode ??
+		(p as Record<string, unknown>).code;
 	if (raw == null) return null;
 	return String(raw);
 }
 
 /** 判断 child 是否属于 parent 的下一级区划（国标 6 位 adcode） */
-function isDescendantAdcode(parentAdcode: string, childAdcode: string): boolean {
+function isDescendantAdcode(
+	parentAdcode: string,
+	childAdcode: string,
+): boolean {
 	if (childAdcode === parentAdcode) return false;
 	if (parentAdcode === "100000") {
 		return childAdcode.length === 6 && childAdcode.endsWith("0000");
@@ -233,9 +241,7 @@ function normalizeGeometry(
 		if (!features.length) return null;
 
 		if (expectedAdcode) {
-			const exact = features.find(
-				(f) => featureAdcode(f) === expectedAdcode,
-			);
+			const exact = features.find((f) => featureAdcode(f) === expectedAdcode);
 			if (exact?.geometry) return exact.geometry;
 
 			const descendants = features.filter((f) => {
@@ -264,7 +270,9 @@ function normalizeGeometry(
 	return null;
 }
 
-async function fetchDatavBoundary(adcode: string): Promise<GeoJSON.Geometry | null> {
+async function fetchDatavBoundary(
+	adcode: string,
+): Promise<GeoJSON.Geometry | null> {
 	const key = `datav:v2:${adcode}`;
 	const hit = recallBoundary(key);
 	if (hit) return hit;
@@ -302,10 +310,7 @@ function hasSpecificSubArea(
 	return false;
 }
 
-function featureInBBox(
-	feature: GeoJSON.Feature,
-	bbox: GeoBBox,
-): boolean {
+function featureInBBox(feature: GeoJSON.Feature, bbox: GeoBBox): boolean {
 	const p = feature.properties as Record<string, unknown> | undefined;
 	const lat = p?.latitude;
 	const lon = p?.longitude;
@@ -360,8 +365,7 @@ async function fetchAdmin1ByRegionCode(
 	const codeUp = regionCode.toUpperCase();
 	const exact = fc.features.find((f) => {
 		const iso = String(
-			(f.properties as Record<string, unknown> | undefined)?.iso_3166_2 ??
-				"",
+			(f.properties as Record<string, unknown> | undefined)?.iso_3166_2 ?? "",
 		).toUpperCase();
 		if (!iso) return false;
 		if (iso === codeUp) return true;
@@ -460,7 +464,18 @@ export async function resolveRegionBoundaryGeometry(
 		if (specific && bbox && !adcode) {
 			geom = bboxToPolygon(bbox); // intentional bbox — no DataV entry for this sub-area
 		} else if (adcode) {
+			// Try DataV (high-res) first; fall back to bundled cn-admin1.json
+			// when DataV returns 403 from overseas domains (e.g. CF Pages).
 			geom = await fetchDatavBoundary(adcode);
+			if (!geom && !specific) {
+				if (adcode === "100000") {
+					// Country outline: merge all provinces
+					geom = await fetchCountryAdmin1Outline("CN");
+				} else {
+					// Province level: exact iso match or bbox intersection
+					geom = await fetchAdmin1ByRegionCode("CN", regionCode ?? "", bbox);
+				}
+			}
 			if (!geom) fetchFailed = true;
 		}
 	} else if (countryCode === "US" && regionCode && !specific) {
