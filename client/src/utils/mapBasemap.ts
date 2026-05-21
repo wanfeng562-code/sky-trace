@@ -1,18 +1,26 @@
-/** OpenFreeMap 样式 ID → 代理后的 style.json URL */
+/** OpenFreeMap 样式 ID → style.json URL
+ * 生产环境直接访问 OFM CDN；开发环境走 Vite dev proxy（支持 HTTP_PROXY）。
+ */
 export function buildOpenFreeMapStyleUrl(styleId: string): string {
-	const origin =
-		typeof window !== "undefined" ? window.location.origin : "";
+	if (import.meta.env.PROD) {
+		return `https://tiles.openfreemap.org/styles/${styleId}`;
+	}
+	const origin = typeof window !== "undefined" ? window.location.origin : "";
 	if (origin) {
 		return `${origin}/openfreemap-proxy/styles/${styleId}`;
 	}
 	return `https://tiles.openfreemap.org/styles/${styleId}`;
 }
 
-/** MapLibre transformRequest：将外网瓦片域名改写为本地代理（开发用 Vite proxy，生产用 CF Pages _redirects） */
+/** MapLibre transformRequest：重写瓦片/字体/精灵 URL。
+ * - 生产环境：直接访问外部 CDN（tile 供应商均支持浏览器跨域请求）。
+ * - 开发环境：改写为本地 Vite dev proxy 路径，以便 HTTP_PROXY 环境变量生效。
+ */
 export function rewriteMapResourceUrl(url: string): string {
-	const origin =
-		typeof window !== "undefined" ? window.location.origin : "";
-
+	if (import.meta.env.PROD) {
+		return url;
+	}
+	const origin = typeof window !== "undefined" ? window.location.origin : "";
 	if (url.startsWith("https://api.maptiler.com")) {
 		return url.replace("https://api.maptiler.com", `${origin}/maptiler-proxy`);
 	}

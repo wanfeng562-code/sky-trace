@@ -892,10 +892,16 @@
 	}
 
 	function buildMaptilerStyleUrl(styleId: string): string {
+		if (import.meta.env.PROD) {
+			return `https://api.maptiler.com/maps/${styleId}/style.json?key=${MAPTILER_KEY}`;
+		}
 		return `/maptiler-proxy/maps/${styleId}/style.json?key=${MAPTILER_KEY}`;
 	}
 
 	function buildStadiaStyleUrl(styleId: string): string {
+		if (import.meta.env.PROD) {
+			return `https://tiles.stadiamaps.com/styles/${styleId}/style.json${STADIA_KEY ? `?api_key=${STADIA_KEY}` : ""}`;
+		}
 		return `/stadia-proxy/styles/${styleId}/style.json${STADIA_KEY ? `?api_key=${STADIA_KEY}` : ""}`;
 	}
 

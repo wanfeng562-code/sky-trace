@@ -580,9 +580,15 @@
 	// ── Basemap URL helpers ──────────────────────────────────────────────────────
 	function buildMaptilerStyleUrl(styleId: string): string {
 		const normalized = normalizeMaptilerStyleId(styleId);
+		if (import.meta.env.PROD) {
+			return `https://api.maptiler.com/maps/${normalized}/style.json?key=${MAPTILER_KEY}`;
+		}
 		return `/maptiler-proxy/maps/${normalized}/style.json?key=${MAPTILER_KEY}`;
 	}
 	function buildStadiaStyleUrl(styleId: string): string {
+		if (import.meta.env.PROD) {
+			return `https://tiles.stadiamaps.com/styles/${styleId}/style.json${STADIA_KEY ? `?api_key=${STADIA_KEY}` : ""}`;
+		}
 		return `/stadia-proxy/styles/${styleId}/style.json${STADIA_KEY ? `?api_key=${STADIA_KEY}` : ""}`;
 	}
 
