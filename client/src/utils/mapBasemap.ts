@@ -1,12 +1,5 @@
 /** OpenFreeMap 样式 ID → 代理后的 style.json URL */
 export function buildOpenFreeMapStyleUrl(styleId: string): string {
-	const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(
-		/\/$/,
-		"",
-	);
-	if (apiBase) {
-		return `${apiBase}/tiles/openfreemap/styles/${styleId}`;
-	}
 	const origin =
 		typeof window !== "undefined" ? window.location.origin : "";
 	if (origin) {
@@ -15,14 +8,10 @@ export function buildOpenFreeMapStyleUrl(styleId: string): string {
 	return `https://tiles.openfreemap.org/styles/${styleId}`;
 }
 
-/** MapLibre transformRequest：将外网瓦片域名改写为本地/后端代理 */
+/** MapLibre transformRequest：将外网瓦片域名改写为本地代理（开发用 Vite proxy，生产用 CF Pages _redirects） */
 export function rewriteMapResourceUrl(url: string): string {
 	const origin =
 		typeof window !== "undefined" ? window.location.origin : "";
-	const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(
-		/\/$/,
-		"",
-	);
 
 	if (url.startsWith("https://api.maptiler.com")) {
 		return url.replace("https://api.maptiler.com", `${origin}/maptiler-proxy`);
@@ -34,12 +23,6 @@ export function rewriteMapResourceUrl(url: string): string {
 		);
 	}
 	if (url.startsWith("https://tiles.openfreemap.org")) {
-		if (apiBase) {
-			return url.replace(
-				"https://tiles.openfreemap.org",
-				`${apiBase}/tiles/openfreemap`,
-			);
-		}
 		return url.replace(
 			"https://tiles.openfreemap.org",
 			`${origin}/openfreemap-proxy`,

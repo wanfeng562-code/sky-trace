@@ -1,0 +1,7 @@
+# Cloudflare Pages reverse-proxy rules for map tile providers.
+# These mirror the Vite dev-server proxy in vite.config.ts so that the
+# same relative paths (/maptiler-proxy/*, etc.) work in production.
+
+/maptiler-proxy/*  https://api.maptiler.com/:splat  200
+/stadia-proxy/*    https://tiles.stadiamaps.com/:splat  200
+/openfreemap-proxy/*  https://tiles.openfreemap.org/:splat  200
