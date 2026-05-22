@@ -6,7 +6,9 @@
 				class="fallback-toast"
 				@click="showFallbackToast = false"
 			>
-				{{ mapFallbackReason }}，已切换至备用底图（{{ currentProvider }}）。点击关闭
+				{{ mapFallbackReason }}，已切换至备用底图（{{
+					currentProvider
+				}}）。点击关闭
 			</div>
 		</transition>
 
@@ -133,7 +135,10 @@
 		routeAirportHighlightPaint,
 	} from "../utils/flightTrackMap";
 	import { fetchDatahubWeather, fetchWeatherGrid } from "../services/api";
-	import { AIRCRAFT_COLOR, resolveStyleAircraftColor } from "../config/aircraftColors";
+	import {
+		AIRCRAFT_COLOR,
+		resolveStyleAircraftColor,
+	} from "../config/aircraftColors";
 	import {
 		HUB_CIRCLE_TIER_1,
 		HUB_LABEL_COLOR,
@@ -175,7 +180,10 @@
 	import { toHubAirportGeoJson } from "../utils/mapHubDisplay";
 	import { HIDE_ALL_FEATURES_FILTER } from "../utils/mapFilters";
 	import { ensureOverlayLayerOrder } from "../utils/mapLayerOrder";
-	import { scheduleMapUpdate, cancelScheduledMapUpdates } from "../utils/mapUpdateScheduler";
+	import {
+		scheduleMapUpdate,
+		cancelScheduledMapUpdates,
+	} from "../utils/mapUpdateScheduler";
 	import {
 		patchFlightGeoJson,
 		type FlightPointFeature,
@@ -378,8 +386,7 @@
 
 	const hubAirportCount = computed(() => {
 		return store.airports.filter((a) => {
-			const pt =
-				a.point_type ?? (a.iata?.startsWith("GRD_") ? "grid" : "hub");
+			const pt = a.point_type ?? (a.iata?.startsWith("GRD_") ? "grid" : "hub");
 			if (pt === "grid") return false;
 			return a.is_hub === true || pt === "hub";
 		}).length;
@@ -403,8 +410,7 @@
 	const contextRailLabel = computed(() => {
 		if (store.selectedFlight) {
 			return (
-				store.selectedFlight.callsign?.trim() ||
-				store.selectedFlight.flight_id
+				store.selectedFlight.callsign?.trim() || store.selectedFlight.flight_id
 			);
 		}
 		if (store.scheduleAirport) return store.scheduleAirport;
@@ -489,22 +495,6 @@
 	let _flightUpdateTimer: ReturnType<typeof setTimeout> | null = null;
 	let flightFeatureIndex: Map<string, FlightPointFeature> | null = null;
 
-	const FEATURE_STATE_SELECTED: FilterSpecification = [
-		"==",
-		["feature-state", "selected"],
-		true,
-	];
-	const FEATURE_STATE_MARKED: FilterSpecification = [
-		"==",
-		["feature-state", "marked"],
-		true,
-	];
-	const FEATURE_STATE_HOVER: FilterSpecification = [
-		"==",
-		["feature-state", "hover"],
-		true,
-	];
-
 	/** 底图切换串行队列：避免短时间多次 setStyle 造成并发抖动 */
 	let _styleSwitching = false;
 	let _pendingStyleSwitch: { url: string; styleId: string } | null = null;
@@ -567,11 +557,7 @@
 					coral,
 				),
 			]);
-			console.debug(
-				"[Aircraft Icon] updated",
-				colors,
-				currentStyleId.value,
-			);
+			console.debug("[Aircraft Icon] updated", colors, currentStyleId.value);
 		} catch (err) {
 			console.error("[Aircraft Icon] refresh failed", err);
 		}
@@ -1029,9 +1015,7 @@
 		const src = map.value.getSource(MAP_AIRPORT_SOURCE_ID) as
 			| GeoJSONSource
 			| undefined;
-		src?.setData(
-			toHubAirportGeoJson(store.airports, store.flights, zoom),
-		);
+		src?.setData(toHubAirportGeoJson(store.airports, store.flights, zoom));
 		scheduleOverlayLayerOrder(map.value);
 		applyMapMarkerLabelStyles(map.value);
 	}
@@ -1767,7 +1751,9 @@
 
 		const dark = isDarkBasemapStyle(currentStyleId.value);
 		const labelColor = dark ? "#f8fafc" : "#1e293b";
-		const labelHalo = dark ? "rgba(15, 23, 42, 0.8)" : "rgba(255, 255, 255, 0.9)";
+		const labelHalo = dark
+			? "rgba(15, 23, 42, 0.8)"
+			: "rgba(255, 255, 255, 0.9)";
 
 		for (const layer of style.layers) {
 			if (layer.type !== "symbol") continue;
@@ -1800,7 +1786,6 @@
 				/* 部分图层不可写 paint */
 			}
 		}
-
 	}
 
 	function initMap() {
@@ -2124,16 +2109,22 @@
 		}
 
 		// Selected flight highlight
+		// NOTE: feature-state is NOT supported in MapLibre filter expressions (v4+);
+		// use paint opacity expressions to show/hide per-feature instead.
 		if (!mapInstance.getLayer(MAP_SELECTED_LAYER_ID)) {
 			mapInstance.addLayer({
 				id: MAP_SELECTED_LAYER_ID,
 				type: "circle",
 				source: MAP_SOURCE_ID,
-				filter: FEATURE_STATE_SELECTED,
 				paint: {
 					"circle-radius": 14,
 					"circle-color": "#f59e0b",
-					"circle-opacity": 0.8,
+					"circle-opacity": [
+						"case",
+						["boolean", ["feature-state", "selected"], false],
+						0.8,
+						0,
+					],
 					"circle-stroke-width": 0,
 				},
 			});
@@ -2144,13 +2135,22 @@
 				id: MAP_MARKED_LAYER_ID,
 				type: "circle",
 				source: MAP_SOURCE_ID,
-				filter: FEATURE_STATE_MARKED,
 				paint: {
 					"circle-radius": 20,
 					"circle-color": "rgba(244, 63, 94, 0.12)",
 					"circle-stroke-color": "#fb7185",
-					"circle-stroke-width": 3,
-					"circle-opacity": 1,
+					"circle-stroke-width": [
+						"case",
+						["boolean", ["feature-state", "marked"], false],
+						3,
+						0,
+					],
+					"circle-opacity": [
+						"case",
+						["boolean", ["feature-state", "marked"], false],
+						1,
+						0,
+					],
 				},
 			});
 		}
@@ -2351,7 +2351,8 @@
 				id: MAP_FLIGHT_HOVER_ICON_LAYER_ID,
 				type: "symbol",
 				source: MAP_SOURCE_ID,
-				filter: FEATURE_STATE_HOVER,
+				// NOTE: feature-state is NOT supported in MapLibre filter expressions (v4+);
+				// use icon-opacity paint expression instead.
 				layout: {
 					"icon-image": flightHoverIconImageLayout(),
 					"icon-size": flightIconSizeLayout(),
@@ -2364,7 +2365,12 @@
 				paint: {
 					"icon-halo-color": "rgba(20, 15, 8, 0.92)",
 					"icon-halo-width": 1.25,
-					"icon-opacity": 1,
+					"icon-opacity": [
+						"case",
+						["boolean", ["feature-state", "hover"], false],
+						1,
+						0,
+					],
 				},
 			});
 		}
@@ -2484,10 +2490,7 @@
 			if (!feature) return;
 			const iata = feature.properties?.iata as string | undefined;
 			if (!iata) return;
-			if (
-				selectedHubIata.value === iata &&
-				store.scheduleAirport === iata
-			) {
+			if (selectedHubIata.value === iata && store.scheduleAirport === iata) {
 				clearHubFocus();
 				return;
 			}
@@ -2503,7 +2506,6 @@
 		mapInstance.on("mouseleave", MAP_AIRPORT_LAYER_ID, () => {
 			mapInstance.getCanvas().style.cursor = "";
 		});
-
 
 		const handleGridCellClick = (event: maplibregl.MapLayerMouseEvent) => {
 			const feature = event.features?.[0];
@@ -2522,7 +2524,10 @@
 				weatherLine = `天气：${parts.join(" ") || "已采集"}`;
 			}
 			if (!gridPopup) {
-				gridPopup = new maplibregl.Popup({ closeButton: true, maxWidth: "300px" });
+				gridPopup = new maplibregl.Popup({
+					closeButton: true,
+					maxWidth: "300px",
+				});
 			}
 			gridPopup
 				.setLngLat(event.lngLat)
@@ -2564,10 +2569,7 @@
 		() => [...store.markedFlightIds],
 		() => {
 			if (!map.value) return;
-			if (
-				hoveredFlightId &&
-				!store.markedFlightIds.includes(hoveredFlightId)
-			) {
+			if (hoveredFlightId && !store.markedFlightIds.includes(hoveredFlightId)) {
 				clearFlightHover(map.value);
 			}
 			syncMapFlightHighlights();
@@ -2690,7 +2692,10 @@
 		() => store.showAqiLayer,
 		(show) => {
 			if (show) showAqiHeatmap.value = true;
-			setLayerVisibility(MAP_AQI_HEATMAP_LAYER_ID, show || showAqiHeatmap.value);
+			setLayerVisibility(
+				MAP_AQI_HEATMAP_LAYER_ID,
+				show || showAqiHeatmap.value,
+			);
 			setLayerVisibility(MAP_AQI_LAYER_ID, false);
 			setLayerVisibility(MAP_AQI_LABEL_LAYER_ID, false);
 			syncEnvironmentalOverlayMode();
@@ -2922,7 +2927,6 @@
 		font-size: 13px;
 		box-shadow: var(--shadow-sm);
 	}
-
 
 	:global(.maplibregl-ctrl-bottom-left) {
 		left: 12px;
