@@ -1,2 +1,5 @@
 # Preserve the upstream GeoNames readme verbatim, including its spacing.
 client/public-app/place-labels/SOURCE_README.txt -whitespace
+# Packaged assets carry SHA-256 checksums: preserve exact bytes on checkout.
+client/public-app/** -text
+*.pbf binary
