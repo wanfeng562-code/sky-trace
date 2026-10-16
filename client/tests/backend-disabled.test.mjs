@@ -1,0 +1,22 @@
+import assert from "node:assert/strict";
+import { fileURLToPath } from "node:url";
+import { test, after } from "node:test";
+import { createServer } from "vite";
+import axios from "axios";
+let requests = 0, sockets = 0;
+axios.defaults.adapter = async () => { requests++; throw new Error("Unexpected backend request"); };
+globalThis.WebSocket = class { constructor() { sockets++; throw new Error("Unexpected WebSocket"); } };
+const root = fileURLToPath(new URL("../", import.meta.url));
+const server = await createServer({ root, mode:"production", server:{middlewareMode:true,ws:false},appType:"custom" });
+after(() => server.close());
+const api = await server.ssrLoadModule("/src/services/api.ts");
+const ws = await server.ssrLoadModule("/src/services/ws.ts");
+const config = await server.ssrLoadModule("/src/config/backend.ts");
+test("paused production never sends HTTP, synchronization or WebSocket requests", async () => {
+  assert.equal(config.BACKEND_ENABLED, false);
+  const responses = await Promise.all([api.fetchFlights(),api.fetchFlightTrack("old-id"),api.fetchFlightStats(),api.fetchAirports(),api.fetchWeatherGrid(),api.fetchPlaybackFrames("start","end"),api.fetchDatahubWeather(),api.fetchAirQuality(),api.fetchPlaceNames(["ap.zh:v2:TPE"]),api.upsertPlaceNames([{cache_key:"example",name_zh:"测试"}]),api.fetchAirportSchedules("TPE")]);
+  assert.deepEqual(responses[0], []);assert.deepEqual(responses[3], []);assert.equal(responses[5].total_frames,0);
+  await assert.rejects(api.fetchFlightDetail("old-id"), /disabled/);
+  let online; ws.createFlightsSocket(() => assert.fail("No snapshot expected"), v => online=v).close();
+  assert.equal(online,false);assert.equal(sockets,0);assert.equal(requests,0);
+});

@@ -8,7 +8,7 @@ export type AppLocale = "zh-CN" | "en-US";
 export interface LocaleOption {
 	id: AppLocale;
 	label: string;
-	/** 界面文案是否已完整翻译 */
+	/** 该语言可供选择；不代表全部业务面板已完成翻译 */
 	uiReady: boolean;
 }
 
@@ -17,7 +17,9 @@ export const LOCALE_OPTIONS: LocaleOption[] = [
 	{ id: "en-US", label: "English", uiReady: true },
 ];
 
-const messages: Record<AppLocale, typeof zhCN> = {
+type TranslationSchema<T> = { [K in keyof T]: T[K] extends string ? string : TranslationSchema<T[K]> };
+
+const messages: Record<AppLocale, TranslationSchema<typeof zhCN>> = {
 	"zh-CN": zhCN,
 	"en-US": enUS,
 };
@@ -59,7 +61,7 @@ export const useLocaleStore = defineStore("locale", () => {
 
 /** 点路径取文案，如 t('nav.map') */
 export function translate(
-	dict: typeof zhCN,
+	dict: TranslationSchema<typeof zhCN>,
 	path: string,
 	params?: Record<string, string>,
 ): string {

@@ -1,7 +1,7 @@
 <template>
 	<div class="marked-panel">
 		<div class="mk-head">
-			<span>已标记</span>
+			<span>{{ i18n.marked.countLabel }}</span>
 			<strong>{{ markedFlights.length }}</strong>
 		</div>
 		<p v-if="!markedFlights.length" class="mk-empty">{{ i18n.marked.empty }}</p>
@@ -18,7 +18,7 @@
 				>
 					<span class="mk-cs">{{ flight.callsign || flight.flight_id }}</span>
 					<span class="mk-sub">
-						{{ (flight.altitude_ft ?? 0) > 100 ? "空中" : "地面" }}
+						{{ (flight.altitude_ft ?? 0) > 100 ? i18n.flightList.airborne : i18n.flightList.ground }}
 						·
 						{{ flight.altitude_ft != null ? Math.round(flight.altitude_ft) : "--" }}
 						ft

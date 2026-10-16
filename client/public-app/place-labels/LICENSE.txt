@@ -1,0 +1,7 @@
+GeoNames point labels, adapted by Sky-Trace.
+Source: https://www.geonames.org/
+License: Creative Commons Attribution 4.0 International
+https://creativecommons.org/licenses/by/4.0/
+
+Changes: select current English aliases, retain Latin-name fallbacks, split by spatial cells, normalize TW/HK/MO as regions of CN, add display zoom levels and country text anchors. No source boundary geometry is included.
+No guarantee of accuracy, timeliness or completeness. This is not an official Tianditu translation.

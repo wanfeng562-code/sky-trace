@@ -99,6 +99,8 @@ const STATUS_CLASS: Record<string, string> = {
 };
 
 function normalizeKey(raw: string): string {
+	const aliases: Record<string, string> = { "飞行中": "airborne", "已起飞": "departed", "已落地": "landed", "已抵达": "arrived", "计划": "scheduled", "计划中": "scheduled", "已取消": "cancelled", "取消": "cancelled", "备降": "diverted", "延误": "delayed", "地面": "ground" };
+	if (aliases[raw.trim()]) return aliases[raw.trim()];
 	return raw.trim().toLowerCase().replace(/-/g, "_").replace(/\s+/g, "_");
 }
 
@@ -109,7 +111,7 @@ export function formatWeatherDescription(
 ): string | null {
 	if (!description?.trim()) return null;
 	const raw = description.trim();
-	if (locale !== "zh-CN") return raw;
+	if (locale !== "zh-CN") return Object.entries(WEATHER_DESC_ZH).find(([, zh]) => zh === raw)?.[0] ?? raw;
 
 	const lower = raw.toLowerCase();
 	if (WEATHER_DESC_ZH[lower]) return WEATHER_DESC_ZH[lower];

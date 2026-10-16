@@ -249,6 +249,9 @@ export const useFlightStore = defineStore("flight", () => {
 					: undefined;
 				const regionAirports =
 					bbox.airports ?? region?.airports ?? country.airports;
+				// Country membership is a fallback only at country level. A selected
+				// province/city must not admit every airport from the same country.
+				const countryOnly = !filterRegion.value && !filterCity.value && !filterDistrict.value;
 
 				if (filterCountryMode.value === "airspace") {
 					list = list.filter(
@@ -263,14 +266,14 @@ export const useFlightStore = defineStore("flight", () => {
 					list = list.filter((f) => {
 						const dep = f.departure_airport;
 						if (!dep) return false;
-						return airportSet.has(dep) || AIRPORT_TO_COUNTRY[dep] === cc;
+						return airportSet.has(dep) || (countryOnly && AIRPORT_TO_COUNTRY[dep] === cc);
 					});
 				} else if (filterCountryMode.value === "arrival") {
 					const airportSet = new Set(regionAirports);
 					list = list.filter((f) => {
 						const arr = f.arrival_airport;
 						if (!arr) return false;
-						return airportSet.has(arr) || AIRPORT_TO_COUNTRY[arr] === cc;
+						return airportSet.has(arr) || (countryOnly && AIRPORT_TO_COUNTRY[arr] === cc);
 					});
 				}
 			}

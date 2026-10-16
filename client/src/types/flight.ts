@@ -38,7 +38,7 @@ export interface WeatherInfo {
 }
 
 // 单航班详情（扩展自 FlightBrief）
-export interface FlightDetail extends FlightBrief {
+export interface FlightDetail extends Omit<FlightBrief, "departure_airport" | "arrival_airport"> {
 	departure_airport: string | null;
 	arrival_airport: string | null;
 	departure_airport_zh?: string | null;

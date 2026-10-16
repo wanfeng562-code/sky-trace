@@ -2,8 +2,6 @@ import type { Map as MapLibreMap } from "maplibre-gl";
 
 /** 底图标注之下：区划、网格、飞机 */
 const STACK_BELOW_LABELS = [
-	"basemap-dim",
-	"terrain-hillshade",
 	"region-highlight-fill",
 	"region-highlight-glow",
 	"weather-grid-fill",
@@ -51,9 +49,9 @@ const ALL_OVERLAY_LAYER_IDS = new Set<string>([
 	...STACK_TEXT_ABOVE_BASEMAP,
 ]);
 
-/** 底图第一个 symbol 层（用于把飞机/场等压到地名标注下面） */
+/** 天地图官方栅格注记层（连续天气场位于其下） */
 function firstBasemapSymbolLayerId(map: MapLibreMap): string | undefined {
-	return map.getStyle().layers.find((l) => l.type === "symbol")?.id;
+	return map.getStyle().layers.find((l) => /^tianditu-(cva|cia|cta)$/.test(l.id))?.id;
 }
 
 /** 底图中最后一个「地名类」symbol 层（非本项目 overlay） */

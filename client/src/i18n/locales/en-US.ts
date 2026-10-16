@@ -1,4 +1,7 @@
+import { BUSINESS_EN } from "../business";
+
 export default {
+	business: BUSINESS_EN,
 	nav: {
 		map: "Live Map",
 		stats: "Statistics",
@@ -16,6 +19,11 @@ export default {
 		filters: "Filters",
 		hubs: "Hubs",
 	},
+	flightList: {
+		search: "Callsign / flight number", all: "All", airborne: "Airborne", ground: "Ground",
+		offline: "Live connection lost. Reconnecting…", results: "Results", unit: "flights",
+		total: "{n} flights in total", filters: "{n} filters", unknownRoute: "Unknown route", empty: "No matching flights",
+	},
 	mapControls: {
 		layers: "Layers",
 		basemap: "Basemap",
@@ -27,34 +35,8 @@ export default {
 	mapLayers: {
 		title: "Overlay layers",
 	},
-	mapLabelField: {
-		"name:en": "English",
-		"name:zh-Hans": "Chinese (Simplified)",
-		"name:zh-Hant": "Chinese (Traditional)",
-		"name:ja": "Japanese",
-		"name:ko": "Korean",
-		name: "Local name",
-	},
 	mapStyles: {
-		maptiler: {
-			"streets-v2-dark": "Streets (dark)",
-			"streets-v2": "Streets (light)",
-			"outdoor-v2": "Outdoor",
-			hybrid: "Satellite",
-			"dataviz-dark": "Dataviz (dark)",
-			dataviz: "Dataviz (light)",
-		},
-		stadia: {
-			alidade_smooth_dark: "Alidade smooth (dark)",
-			alidade_smooth: "Alidade smooth",
-			stamen_terrain: "Terrain",
-			alidade_satellite: "Satellite",
-		},
-		openfreemap: {
-			liberty: "Liberty",
-			bright: "Bright",
-			positron: "Positron",
-		},
+		tianditu: { vector: "Road map", imagery: "Satellite imagery", terrain: "Terrain" },
 	},
 	overlays: {
 		showAqi: {
@@ -187,14 +169,16 @@ export default {
 		source: "Provider",
 		style: "Style",
 		labelLang: "Map labels",
-		uiLang: "Interface",
+		uiLang: "Interface and place names",
 		labelLines: "Lines",
 		singleLine: "Single",
 		doubleLine: "Dual",
 		line1: "Line 1",
 		line2: "Line 2",
 		language: "Language",
-		fallback: "Fell back to {provider}",
+		officialLabels: "Chinese uses official Tianditu labels. English uses GeoNames place names, with Latin transliterations where needed.",
+		localLabelsUnavailable: "English place names could not be loaded. Tianditu Chinese labels have been restored.",
+		unavailable: "Tianditu basemap is unavailable. Please contact the administrator.",
 	},
 	locale: {
 		"zh-CN": "简体中文",

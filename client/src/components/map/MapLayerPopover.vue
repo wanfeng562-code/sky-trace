@@ -48,7 +48,7 @@
 	} from "../../config/mapOverlayMeta";
 	import { translate, useLocaleStore } from "../../i18n";
 
-	export type MapProvider = "maptiler" | "stadia" | "openfreemap";
+	export type { MapProvider } from "../../utils/mapBasemap";
 
 	const localeStore = useLocaleStore();
 	const ui = computed(() => ({

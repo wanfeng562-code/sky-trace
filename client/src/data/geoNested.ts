@@ -19,7 +19,7 @@ export interface GeoCity extends GeoBBox {
 	districts?: GeoDistrict[];
 }
 
-export type NestedGeoMap = Record<string, Record<string, GeoCity[]>>;
+export type NestedGeoMap = Record<string, GeoCity[]>;
 
 export const NESTED_GEO_CN: NestedGeoMap = {
   "BJ": [

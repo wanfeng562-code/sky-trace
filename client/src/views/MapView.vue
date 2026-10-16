@@ -1,16 +1,5 @@
 <template>
 	<div class="map-layout">
-		<transition name="toast">
-			<div
-				v-if="showFallbackToast"
-				class="fallback-toast"
-				@click="showFallbackToast = false"
-			>
-				{{ mapFallbackReason }}，已切换至备用底图（{{
-					currentProvider
-				}}）。点击关闭
-			</div>
-		</transition>
 
 		<div class="map-workspace">
 			<MapSidebar
@@ -32,6 +21,8 @@
 
 			<div class="map-shell">
 				<div ref="mapContainer" class="map-canvas"></div>
+				<div v-if="basemapUnavailable" class="map-basemap-status" role="status">{{ basemapStatus }}</div>
+				<div v-else-if="localLabelsUnavailable" class="map-basemap-status" role="status">{{ localeStore.t.basemap.localLabelsUnavailable }}</div>
 				<MapControlsOverlay
 					v-model:layers-open="showLayerPanel"
 					v-model:basemap-open="showBasemapPanel"
@@ -57,22 +48,15 @@
 					:provider="currentProvider"
 					:style-id="currentStyleId"
 					:styles="currentProviderStyles"
-					:has-maptiler="!!MAPTILER_KEY"
-					:has-stadia="!!STADIA_KEY"
-					:fallback-active="mapFallbackActive"
-					v-model:label-lines="labelLines"
-					v-model:label-line1="labelLine1"
-					v-model:label-line2="labelLine2"
-					:label-options="labelLangOptions"
-					@switch-provider="switchProvider"
+					:unavailable="basemapUnavailable"
 					@switch-style="switchStyle"
 				/>
-				<div v-if="store.loading" class="map-status">正在加载航班数据...</div>
+				<div v-if="store.loading" class="map-status">{{ ui.loadingFlights }}</div>
 				<div v-else-if="store.trackLoading" class="map-status">
-					正在加载选中航班轨迹...
+					{{ ui.loadingTrack }}
 				</div>
 				<div v-else-if="!store.flights.length" class="map-status">
-					暂无航班数据，等待后端返回快照。
+					{{ !BACKEND_ENABLED ? ui.backendPaused : ui.waitingSnapshot }}
 				</div>
 			</div>
 
@@ -95,15 +79,22 @@
 </template>
 
 <script setup lang="ts">
+	import { formatWeatherDescription } from "../utils/flightDetailLocale";
+	import { useBusinessLocale } from "../i18n/useBusinessLocale";
+	const { ui } = useBusinessLocale();
+	import { BACKEND_ENABLED } from "../config/backend";
 	defineOptions({ name: "MapView" });
 
 	import {
 		computed,
 		markRaw,
 		nextTick,
+		onDeactivated,
+		onActivated,
 		onMounted,
 		onUnmounted,
 		ref,
+		shallowRef,
 		watch,
 	} from "vue";
 	import maplibregl, {
@@ -143,7 +134,6 @@
 		HUB_CIRCLE_TIER_1,
 		HUB_LABEL_COLOR,
 		HUB_LABEL_HALO,
-		isDarkBasemapStyle,
 	} from "../config/mapVisualTheme";
 	import {
 		applyMapMarkerLabelStyles,
@@ -193,17 +183,15 @@
 		resetFlightFeatureStateTracking,
 		syncFlightHighlightStates,
 	} from "../utils/flightFeatureState";
+	import { resolveGeoBBox } from "../data/geoHierarchy";
 	import {
-		bboxFromGeometry,
-		geometryToFeature,
-		resolveRegionBoundaryGeometry,
-	} from "../utils/regionBoundaries";
-	import {
-		buildOpenFreeMapStyleUrl,
-		isOpenFreeMapPlaceLabelLayer,
-		OPENFREEMAP_LABEL_FONTS,
-		rewriteMapResourceUrl,
+		createBasemapStyle, DEFAULT_BASEMAP_STYLE, TIANDITU_KEY, basemapApprovalNumber,
+		TIANDITU_STYLE_IDS, normalizeBasemapStyle, basemapStatusMessage,
+		type MapProvider,
 	} from "../utils/mapBasemap";
+	import { createPlaceLabelController } from "../utils/localPlaceLabels";
+	import { applyOverlaySymbolFonts } from "../config/mapLabelFonts";
+	import type { StyleSpecification } from "maplibre-gl";
 	import {
 		computeWeatherGridFromFlights,
 		enrichCellsWithGrdWeather,
@@ -218,14 +206,7 @@
 	} from "../types/flight";
 
 	// ── API keys from .env ───────────────────────────────────────────────────────
-	const MAPTILER_KEY = (import.meta.env.VITE_MAPTILER_KEY as string) || "";
-	const STADIA_KEY = (import.meta.env.VITE_STADIA_KEY as string) || "";
-
-	// ── Map config from .env ─────────────────────────────────────────────────────
-	const MAP_DEFAULT_PROVIDER =
-		(import.meta.env.VITE_MAP_DEFAULT_PROVIDER as string) || "maptiler";
-	const MAP_DEFAULT_STYLE =
-		(import.meta.env.VITE_MAP_DEFAULT_STYLE as string) || "streets-v2-dark";
+	const MAP_DEFAULT_STYLE = DEFAULT_BASEMAP_STYLE;
 	const MAP_INIT_LNG = parseFloat(
 		(import.meta.env.VITE_MAP_INIT_LNG as string) || "113.2644",
 	);
@@ -235,40 +216,6 @@
 	const MAP_INIT_ZOOM = parseFloat(
 		(import.meta.env.VITE_MAP_INIT_ZOOM as string) || "4",
 	);
-
-	// ── Basemap style catalogues（文案走 i18n mapStyles.*）────────────────────────
-	const MAPTILER_STYLE_IDS = [
-		"streets-v2-dark",
-		"streets-v2",
-		"outdoor-v2",
-		"hybrid",
-		"dataviz-dark",
-		"dataviz",
-	] as const;
-	const STADIA_STYLE_IDS = [
-		"alidade_smooth_dark",
-		"alidade_smooth",
-		"stamen_terrain",
-		"alidade_satellite",
-	] as const;
-	const OPENFREEMAP_STYLE_IDS = ["liberty", "bright", "positron"] as const;
-
-	const MAPTILER_STYLE_ALIASES: Record<string, string> = {
-		"satellite-hybrid": "hybrid",
-	};
-
-	function normalizeMaptilerStyleId(styleId: string): string {
-		return MAPTILER_STYLE_ALIASES[styleId] ?? styleId;
-	}
-
-	const LABEL_LANG_KEYS = [
-		"name:en",
-		"name:zh-Hans",
-		"name:zh-Hant",
-		"name:ja",
-		"name:ko",
-		"name",
-	] as const;
 
 	const MAP_SOURCE_ID = "flights";
 	const MAP_LAYER_ID = "flight-points";
@@ -314,45 +261,33 @@
 	const store = useFlightStore();
 	const localeStore = useLocaleStore();
 
-	function mapStyleLabel(provider: MapProvider, styleId: string): string {
-		const dict = localeStore.t;
-		if (provider === "maptiler") {
-			return translate(dict, `mapStyles.maptiler.${styleId}`);
-		}
-		if (provider === "stadia") {
-			return translate(dict, `mapStyles.stadia.${styleId}`);
-		}
-		return translate(dict, `mapStyles.openfreemap.${styleId}`);
-	}
-
-	const labelLangOptions = computed(() =>
-		LABEL_LANG_KEYS.map((key) => ({
-			key,
-			label: translate(localeStore.t, `mapLabelField.${key}`),
-		})),
-	);
-
-	function pickStyleId<T extends readonly string[]>(
-		ids: T,
-		want: string,
-	): T[number] {
-		return (ids as readonly string[]).includes(want)
-			? (want as T[number])
-			: ids[0];
+	function mapStyleLabel(_provider: MapProvider, styleId: string): string {
+		return translate(localeStore.t, `mapStyles.tianditu.${styleId}`);
 	}
 	const mapContainer = ref<HTMLElement | null>(null);
-	const map = ref<MapLibreMap | null>(null);
+	const map = shallowRef<MapLibreMap | null>(null);
 	const hasFittedInitialBounds = ref(false);
 
-	type MapProvider = "maptiler" | "stadia" | "openfreemap";
-	const currentProvider = ref<MapProvider>(MAP_DEFAULT_PROVIDER as MapProvider);
+	const currentProvider = ref<MapProvider>("tianditu");
 	const currentStyleId = ref(MAP_DEFAULT_STYLE);
-	const mapFallbackActive = ref(false);
-	const mapFallbackReason = ref("");
-	const showFallbackToast = ref(false);
+	const basemapUnavailable = ref(!TIANDITU_KEY);
+	const basemapStatusCode = ref<number>();
+	const basemapStatus = computed(() => basemapStatusMessage(basemapStatusCode.value, localeStore.locale));
+	const localLabelsUnavailable = ref(false);
+	let placeLabels: ReturnType<typeof createPlaceLabelController> | null = null;
+	watch(() => localeStore.locale, () => placeLabels?.refresh());
 
 	const showLayerPanel = ref(false);
 	const showBasemapPanel = ref(false);
+	onDeactivated(() => {
+		showBasemapPanel.value = false;
+		showLayerPanel.value = false;
+	});
+	onActivated(() => {
+		store.connectSocket();
+		map.value?.resize();
+		placeLabels?.refresh();
+	});
 	const mapBearing = ref(0);
 
 	function syncMapBearing() {
@@ -471,10 +406,6 @@
 	let _gridRefreshTimer: ReturnType<typeof setInterval> | null = null;
 	let _gridFlightRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 	let gridPopup: maplibregl.Popup | null = null;
-	// ── Label language settings ───────────────────────────────────────────────────
-	const labelLines = ref<1 | 2>(2);
-	const labelLine1 = ref("name:en");
-	const labelLine2 = ref("name:zh-Hans");
 
 	interface WeatherHubEntry {
 		iata: string;
@@ -497,14 +428,14 @@
 
 	/** 底图切换串行队列：避免短时间多次 setStyle 造成并发抖动 */
 	let _styleSwitching = false;
-	let _pendingStyleSwitch: { url: string; styleId: string } | null = null;
+	let _pendingStyleSwitch: { url: StyleSpecification; styleId: string } | null = null;
 
 	function resolveAircraftIconColors(): { fly: string; ground: string } {
 		const color = resolveStyleAircraftColor(currentStyleId.value);
 		return { fly: color, ground: color };
 	}
 
-	async function applyStyleWithQueue(url: string, styleId: string) {
+	async function applyStyleWithQueue(url: StyleSpecification, styleId: string) {
 		if (!map.value) return;
 		if (_styleSwitching) {
 			_pendingStyleSwitch = { url, styleId };
@@ -525,7 +456,7 @@
 				if (_pendingStyleSwitch) {
 					const next = _pendingStyleSwitch;
 					_pendingStyleSwitch = null;
-					currentStyleId.value = next.styleId;
+					currentStyleId.value = normalizeBasemapStyle(next.styleId);
 					void applyStyleWithQueue(next.url, next.styleId);
 				}
 			}
@@ -563,146 +494,15 @@
 		}
 	}
 
-	// ── Basemap URL helpers ──────────────────────────────────────────────────────
-	function buildMaptilerStyleUrl(styleId: string): string {
-		const normalized = normalizeMaptilerStyleId(styleId);
-		if (import.meta.env.PROD) {
-			return `https://api.maptiler.com/maps/${normalized}/style.json?key=${MAPTILER_KEY}`;
-		}
-		return `/maptiler-proxy/maps/${normalized}/style.json?key=${MAPTILER_KEY}`;
-	}
-	function buildStadiaStyleUrl(styleId: string): string {
-		if (import.meta.env.PROD) {
-			return `https://tiles.stadiamaps.com/styles/${styleId}/style.json${STADIA_KEY ? `?api_key=${STADIA_KEY}` : ""}`;
-		}
-		return `/stadia-proxy/styles/${styleId}/style.json${STADIA_KEY ? `?api_key=${STADIA_KEY}` : ""}`;
-	}
+	const currentProviderStyles = computed(() => TIANDITU_STYLE_IDS.map((id) => ({
+		id, label: mapStyleLabel("tianditu", id),
+	})));
 
-	/** Computed list of styles for the currently active provider. */
-	const currentProviderStyles = computed(() => {
-		const p = currentProvider.value;
-		if (p === "maptiler") {
-			return MAPTILER_STYLE_IDS.map((id) => ({
-				id,
-				label: mapStyleLabel("maptiler", id),
-			}));
-		}
-		if (p === "stadia") {
-			return STADIA_STYLE_IDS.map((id) => ({
-				id,
-				label: mapStyleLabel("stadia", id),
-			}));
-		}
-		return OPENFREEMAP_STYLE_IDS.map((id) => ({
-			id,
-			label: mapStyleLabel("openfreemap", id),
-		}));
-	});
-
-	/**
-	 * Pre-flight check: honours VITE_MAP_DEFAULT_PROVIDER / VITE_MAP_DEFAULT_STYLE,
-	 * then falls back through maptiler → stadia → openfreemap as keys allow.
-	 * Returns the resolved style URL and chosen provider.
-	 */
-	async function determineInitialStyle(): Promise<{
-		url: string;
-		provider: MapProvider;
-		styleId: string;
-	}> {
-		const wantProvider = MAP_DEFAULT_PROVIDER as MapProvider;
-		const wantStyle = MAP_DEFAULT_STYLE;
-
-		// ── Try the configured provider first ───────────────────────────────
-		if (wantProvider === "openfreemap") {
-			const s =
-				OPENFREEMAP_STYLE_IDS.find((x) => x === wantStyle) ??
-				OPENFREEMAP_STYLE_IDS[0];
-			return {
-				url: buildOpenFreeMapStyleUrl(s),
-				provider: "openfreemap",
-				styleId: s,
-			};
-		}
-
-		if (wantProvider === "maptiler" && MAPTILER_KEY) {
-			const wantStyleNormalized = normalizeMaptilerStyleId(wantStyle);
-			const styleId = pickStyleId(MAPTILER_STYLE_IDS, wantStyleNormalized);
-			try {
-				const resp = await fetch(buildMaptilerStyleUrl(styleId));
-				if (resp.ok) {
-					return {
-						url: buildMaptilerStyleUrl(styleId),
-						provider: "maptiler",
-						styleId,
-					};
-				}
-				mapFallbackActive.value = true;
-				mapFallbackReason.value = `MapTiler 返回 HTTP ${resp.status}`;
-			} catch {
-				mapFallbackActive.value = true;
-				mapFallbackReason.value = "无法连接 MapTiler";
-			}
-		}
-
-		if (wantProvider === "stadia" && STADIA_KEY) {
-			const styleId = pickStyleId(STADIA_STYLE_IDS, wantStyle);
-			return {
-				url: buildStadiaStyleUrl(styleId),
-				provider: "stadia",
-				styleId,
-			};
-		}
-
-		// ── Fallback chain ───────────────────────────────────────────────────
-		if (wantProvider !== "maptiler" && MAPTILER_KEY) {
-			const styleId = MAPTILER_STYLE_IDS[0];
-			try {
-				const resp = await fetch(buildMaptilerStyleUrl(styleId));
-				if (resp.ok) {
-					mapFallbackActive.value = true;
-					mapFallbackReason.value = `已回退至 MapTiler`;
-					return {
-						url: buildMaptilerStyleUrl(styleId),
-						provider: "maptiler",
-						styleId,
-					};
-				}
-			} catch {
-				/* continue to next fallback */
-			}
-		}
-
-		if (STADIA_KEY) {
-			const styleId = STADIA_STYLE_IDS[0];
-			if (wantProvider !== "stadia") {
-				mapFallbackActive.value = true;
-				mapFallbackReason.value = "已回退至 Stadia Maps";
-			}
-			return { url: buildStadiaStyleUrl(styleId), provider: "stadia", styleId };
-		}
-
-		const s = OPENFREEMAP_STYLE_IDS[0];
+	async function determineInitialStyle() {
 		return {
-			url: buildOpenFreeMapStyleUrl(s),
-			provider: "openfreemap",
-			styleId: s,
+			url: createBasemapStyle(MAP_DEFAULT_STYLE, TIANDITU_KEY, basemapApprovalNumber(MAP_DEFAULT_STYLE)),
+			provider: "tianditu" as MapProvider, styleId: MAP_DEFAULT_STYLE,
 		};
-	}
-
-	/**
-	 * MapLibre transformRequest: rewrites external tile/font/sprite URLs to local
-	 * proxy paths so all map tile traffic flows through the Vite dev proxy (or backend
-	 * proxy in production) rather than going directly to MapTiler/Stadia CDNs.
-	 *
-	 * IMPORTANT: Must return absolute URLs (not relative paths like /maptiler-proxy/...).
-	 * MapLibre passes the transformed URL to a Web Worker running in a blob: URL context.
-	 * In blob: workers, relative path-absolute URLs cannot be resolved
-	 * (new Request('/foo') throws "Failed to parse URL from /foo"), so tile fetches
-	 * would silently fail. Using window.location.origin ensures absolute URLs that
-	 * the worker can fetch as same-origin requests.
-	 */
-	function transformRequest(url: string): { url: string } {
-		return { url: rewriteMapResourceUrl(url) };
 	}
 
 	/**
@@ -710,41 +510,17 @@
 	 * MapLibre removes all sources/layers when setStyle() is called.
 	 */
 	async function reinitLayers(mapInstance: MapLibreMap) {
-		applyBilingualLabels(mapInstance);
-
-		// Terrain DEM
-		if (!mapInstance.getSource("terrain-dem")) {
-			mapInstance.addSource("terrain-dem", {
-				type: "raster-dem",
-				tiles: [
-					"https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
-				],
-				tileSize: 256,
-				encoding: "terrarium",
-				maxzoom: 14,
-			});
-			const firstSym = mapInstance
-				.getStyle()
-				.layers.find((l) => l.type === "symbol");
-			mapInstance.addLayer(
-				{
-					id: "terrain-hillshade",
-					type: "hillshade",
-					source: "terrain-dem",
-					paint: {
-						"hillshade-intensity": 0.35,
-						"hillshade-shadow-color": "#5a4630",
-						"hillshade-highlight-color": "#ffffff",
-						"hillshade-accent-color": "#5a4630",
-					},
-				},
-				firstSym?.id,
-			);
-		}
+		applyBusinessOverlayFonts(mapInstance);
 
 		await refreshAircraftIcons(mapInstance);
 
 		addCustomLayers(mapInstance);
+		if (!placeLabels) placeLabels = createPlaceLabelController(mapInstance, {
+			locale: () => localeStore.locale,
+			style: () => currentStyleId.value,
+			onUnavailable: value => { localLabelsUnavailable.value = value; },
+		});
+		placeLabels.refresh();
 		scheduleOverlayLayerOrder(mapInstance);
 		syncEnvironmentalOverlayMode();
 		updateHubAirportLayer();
@@ -764,45 +540,12 @@
 	 */
 	async function switchStyle(styleId: string) {
 		if (!map.value) return;
-		let url: string;
-		let resolvedStyleId = styleId;
-		if (currentProvider.value === "maptiler") {
-			resolvedStyleId = normalizeMaptilerStyleId(styleId);
-			url = buildMaptilerStyleUrl(resolvedStyleId);
-		} else if (currentProvider.value === "stadia") {
-			url = buildStadiaStyleUrl(styleId);
-		} else {
-			url = buildOpenFreeMapStyleUrl(styleId);
-		}
-		if (resolvedStyleId === currentStyleId.value && !_styleSwitching) return;
-		currentStyleId.value = resolvedStyleId;
-		void applyStyleWithQueue(url, resolvedStyleId);
-	}
-
-	/**
-	 * Switch to a different map provider, optionally specifying a style.
-	 * Defaults to the first style in the new provider's catalogue.
-	 */
-	async function switchProvider(provider: MapProvider, styleId?: string) {
-		if (!map.value) return;
-		currentProvider.value = provider;
-		let url: string;
-		let sid: string;
-		if (provider === "maptiler") {
-			const defaultStyle = normalizeMaptilerStyleId(MAP_DEFAULT_STYLE);
-			sid = normalizeMaptilerStyleId(
-				styleId || pickStyleId(MAPTILER_STYLE_IDS, defaultStyle),
-			);
-			url = buildMaptilerStyleUrl(sid);
-		} else if (provider === "stadia") {
-			sid = styleId || STADIA_STYLE_IDS[0];
-			url = buildStadiaStyleUrl(sid);
-		} else {
-			sid = pickStyleId(OPENFREEMAP_STYLE_IDS, styleId ?? "");
-			url = buildOpenFreeMapStyleUrl(sid);
-		}
-		currentStyleId.value = sid;
-		void applyStyleWithQueue(url, sid);
+		const id = normalizeBasemapStyle(styleId);
+		if (id === currentStyleId.value && !_styleSwitching) return;
+		currentStyleId.value = id;
+		basemapUnavailable.value = !TIANDITU_KEY;
+		basemapStatusCode.value = undefined;
+		void applyStyleWithQueue(createBasemapStyle(id, TIANDITU_KEY, basemapApprovalNumber(id)), id);
 	}
 
 	// ── Weather hub fetch (for wind/temp layers) ─────────────────────────────────
@@ -1007,7 +750,6 @@
 
 	let hubZoomListenerBound = false;
 	let _hubZoomTimer: ReturnType<typeof setTimeout> | null = null;
-	let _labelApplyTimer: ReturnType<typeof setTimeout> | null = null;
 
 	function updateHubAirportLayer() {
 		if (!map.value) return;
@@ -1148,12 +890,14 @@
 	/** 样式/数据变更后再抬一次文字层，避免被底图 symbol 盖住 */
 	function scheduleOverlayLayerOrder(mapInstance: MapLibreMap) {
 		ensureOverlayLayerOrder(mapInstance);
+		applyOverlaySymbolFonts(mapInstance);
 		applyMapMarkerLabelStyles(mapInstance);
 		if (overlayOrderIdlePending) return;
 		overlayOrderIdlePending = true;
 		const run = () => {
 			overlayOrderIdlePending = false;
 			ensureOverlayLayerOrder(mapInstance);
+		applyOverlaySymbolFonts(mapInstance);
 			applyMapMarkerLabelStyles(mapInstance);
 		};
 		if (mapInstance.loaded()) {
@@ -1313,6 +1057,7 @@
 					type: "symbol",
 					source: MAP_GRID_POINTS_SOURCE_ID,
 					layout: {
+					"text-font": ["Noto Sans Regular"],
 						visibility: showGridPoints.value ? "visible" : "none",
 						...weatherGridMarkerLayout(),
 					},
@@ -1480,17 +1225,6 @@
 		}, debounceMs);
 	}
 
-	function scheduleBilingualLabels() {
-		if (!map.value) return;
-		if (_labelApplyTimer !== null) clearTimeout(_labelApplyTimer);
-		_labelApplyTimer = setTimeout(() => {
-			_labelApplyTimer = null;
-			if (!map.value) return;
-			applyBilingualLabels(map.value);
-			scheduleOverlayLayerOrder(map.value);
-			applyMapMarkerLabelStyles(map.value);
-		}, 400);
-	}
 
 	function updateTrackLayer() {
 		if (!map.value) return;
@@ -1610,182 +1344,9 @@
 		return loadMapIcon(mapInstance, id, dataUrl);
 	}
 
-	/** 将地图中所有地名标注改为可配置的双语/单语样式，并加粗字体 */
-	function applyBilingualLabels(mapInstance: MapLibreMap) {
-		const style = mapInstance.getStyle();
-
-		// 按提供商选取粗体字体栈（使用各自 glyph set 中存在的粗体字体）
-		const boldFonts: Record<MapProvider, string[]> = {
-			maptiler: ["Open Sans Bold", "Arial Unicode MS Regular"],
-			stadia: ["Open Sans Bold", "Arial Unicode MS Regular"],
-			openfreemap: [...OPENFREEMAP_LABEL_FONTS],
-		};
-		const fonts = boldFonts[currentProvider.value] ?? [
-			"Open Sans Bold",
-			"Arial Unicode MS Regular",
-		];
-		const useOpenFreeMapNativePlaceLabels =
-			currentProvider.value === "openfreemap";
-
-		/**
-		 * 主行表达式：英文/本地名称，有充分兜底
-		 * MapTiler 同时存在 name:en（冒号）和 name_en（下划线）两种格式，均尝试
-		 */
-		function line1Expr(langKey: string): unknown[] {
-			if (langKey === "name:en") {
-				return [
-					"coalesce",
-					["get", "name:en"],
-					["get", "name_en"],
-					["get", "name:latin"],
-					["get", "name"],
-					"",
-				];
-			}
-			if (langKey === "name") {
-				return ["coalesce", ["get", "name"], ""];
-			}
-			// 中文变体：优先 name:zh-Hans/zh-Hant，回退到 name:zh（OSM 通用中文字段，覆盖更广）
-			if (langKey === "name:zh-Hans" || langKey === "name:zh-Hant") {
-				return [
-					"coalesce",
-					["get", langKey],
-					["get", "name:zh"],
-					["get", "name"],
-					"",
-				];
-			}
-			return ["coalesce", ["get", langKey], ["get", "name"], ""];
-		}
-
-		/**
-		 * 副行表达式：只取指定语言字段，不跨语言回退
-		 * 避免 zh-Hans 为空时回退到英文，造成两行显示相同内容
-		 * 中文变体额外尝试 name:zh（同为中文，不会产生重复）
-		 */
-		function line2Expr(langKey: string): unknown[] {
-			if (langKey === "name:en") {
-				return ["coalesce", ["get", "name:en"], ["get", "name_en"], ""];
-			}
-			if (langKey === "name") {
-				return ["coalesce", ["get", "name"], ""];
-			}
-			// 中文变体：name:zh-Hans → name:zh（仍为中文，安全回退）
-			if (langKey === "name:zh-Hans" || langKey === "name:zh-Hant") {
-				return ["coalesce", ["get", langKey], ["get", "name:zh"], ""];
-			}
-			return ["coalesce", ["get", langKey], ""];
-		}
-
-		/**
-		 * 条件检测：该语言字段是否有实际内容（不跨语言回退）
-		 * 用于决定是否显示双行，防止 zh-Hans 空时误显示两行相同文字
-		 * 中文变体也检测 name:zh 字段
-		 */
-		function hasLang(langKey: string): unknown[] {
-			if (langKey === "name:en") {
-				return ["coalesce", ["get", "name:en"], ["get", "name_en"], ""];
-			}
-			// 中文变体：同时检测 name:zh 是否有内容
-			if (langKey === "name:zh-Hans" || langKey === "name:zh-Hant") {
-				return ["coalesce", ["get", langKey], ["get", "name:zh"], ""];
-			}
-			return ["coalesce", ["get", langKey], ""];
-		}
-
-		const textField =
-			labelLines.value === 1
-				? line1Expr(labelLine1.value)
-				: [
-						"case",
-						// 仅当第二语言字段本身有内容时显示双行（严格检测，无跨语言回退）
-						["!=", hasLang(labelLine2.value), ""],
-						[
-							"concat",
-							line1Expr(labelLine1.value),
-							"\n",
-							line2Expr(labelLine2.value),
-						],
-						line1Expr(labelLine1.value),
-					];
-
-		for (const layer of style.layers) {
-			if (layer.type !== "symbol") continue;
-			// 叠加层标注（机场/风场/悬浮）使用独立 text-field，不可套用底图双语逻辑
-			if (
-				layer.id === MAP_AIRPORT_LABEL_LAYER_ID ||
-				layer.id === MAP_AIRPORT_HIGHLIGHT_LABEL_ID ||
-				layer.id === MAP_WIND_LABEL_LAYER_ID ||
-				layer.id === MAP_HOVER_LABEL_LAYER_ID
-			) {
-				continue;
-			}
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const layout = (layer as any).layout ?? {};
-			const field = layout["text-field"];
-			if (!field) continue;
-			const fieldStr = JSON.stringify(field);
-			// 只处理引用 name 字段的图层（兼容 ["get","name:en"] 和 "{name:latin}" 两种格式）
-			if (!fieldStr.includes("name")) continue;
-			// 跳过路牌、路线编号等非地名图层
-			if (/"ref"/.test(fieldStr)) continue;
-			if (
-				layer.id.includes("shield") ||
-				layer.id.includes("route") ||
-				layer.id.includes("-ref")
-			)
-				continue;
-
-			// OpenFreeMap 行政地名沿用样式内置 text-field（latin/nonlatin），避免标注消失
-			if (
-				useOpenFreeMapNativePlaceLabels &&
-				isOpenFreeMapPlaceLabelLayer(layer.id)
-			) {
-				mapInstance.setLayoutProperty(layer.id, "text-font", fonts);
-				continue;
-			}
-
-			mapInstance.setLayoutProperty(layer.id, "text-field", textField);
-			mapInstance.setLayoutProperty(layer.id, "text-font", fonts);
-		}
-
-		const dark = isDarkBasemapStyle(currentStyleId.value);
-		const labelColor = dark ? "#f8fafc" : "#1e293b";
-		const labelHalo = dark
-			? "rgba(15, 23, 42, 0.8)"
-			: "rgba(255, 255, 255, 0.9)";
-
-		for (const layer of style.layers) {
-			if (layer.type !== "symbol") continue;
-			if (
-				layer.id === MAP_AIRPORT_LABEL_LAYER_ID ||
-				layer.id === MAP_AIRPORT_HIGHLIGHT_LABEL_ID ||
-				layer.id === MAP_WIND_LABEL_LAYER_ID ||
-				layer.id === MAP_HOVER_LABEL_LAYER_ID
-			) {
-				continue;
-			}
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const layout = (layer as any).layout ?? {};
-			if (!layout["text-field"]) continue;
-			const fieldStr = JSON.stringify(layout["text-field"]);
-			if (!fieldStr.includes("name")) continue;
-			if (/"ref"/.test(fieldStr)) continue;
-			if (
-				layer.id.includes("shield") ||
-				layer.id.includes("route") ||
-				layer.id.includes("-ref")
-			) {
-				continue;
-			}
-			try {
-				mapInstance.setPaintProperty(layer.id, "text-color", labelColor);
-				mapInstance.setPaintProperty(layer.id, "text-halo-color", labelHalo);
-				mapInstance.setPaintProperty(layer.id, "text-halo-width", 1.25);
-			} catch {
-				/* 部分图层不可写 paint */
-			}
-		}
+	/** Official raster annotations remain unchanged; fonts apply to business overlays only. */
+	function applyBusinessOverlayFonts(mapInstance: MapLibreMap) {
+		applyOverlaySymbolFonts(mapInstance);
 	}
 
 	function initMap() {
@@ -1802,21 +1363,14 @@
 			currentProvider.value = provider;
 			if (styleId) currentStyleId.value = styleId;
 
-			if (mapFallbackActive.value && mapFallbackReason.value) {
-				showFallbackToast.value = true;
-				setTimeout(() => {
-					showFallbackToast.value = false;
-				}, 8000);
-			}
-
 			const mapInstance = new maplibregl.Map({
 				container: mapContainer.value!,
 				style: styleUrl,
 				center: [MAP_INIT_LNG, MAP_INIT_LAT],
 				zoom: MAP_INIT_ZOOM,
-				minZoom: 0,
+				minZoom: 1,
 				maxZoom: 18,
-				attributionControl: true,
+				attributionControl: { compact: false },
 				localIdeographFontFamily:
 					"Noto Sans CJK SC, Microsoft YaHei, SimHei, sans-serif",
 				refreshExpiredTiles: false,
@@ -1824,7 +1378,6 @@
 				maxTileCacheZoomLevels: 8,
 				cancelPendingTileRequestsWhileZooming: false,
 				fadeDuration: 150,
-				transformRequest,
 			});
 
 			mapInstance.addControl(
@@ -1832,32 +1385,11 @@
 				"bottom-left",
 			);
 
-			// Runtime error: detect quota exceeded (403/429) and failover
 			mapInstance.on("error", (e) => {
-				const status = (e.error as { status?: number })?.status;
-				if (
-					(status === 403 || status === 429) &&
-					currentProvider.value === "maptiler" &&
-					STADIA_KEY
-				) {
-					const reason =
-						status === 429
-							? "MapTiler 配额已用尽 (429)"
-							: "MapTiler 访问被拒绝 (403)";
-					mapFallbackActive.value = true;
-					mapFallbackReason.value = reason;
-					currentProvider.value = "stadia";
-					const stadiaDefault = "alidade_smooth_dark";
-					currentStyleId.value = stadiaDefault;
-					mapInstance.setStyle(buildStadiaStyleUrl(stadiaDefault), {
-						diff: false,
-					});
-					mapInstance.once("style.load", () => reinitLayers(mapInstance));
-					showFallbackToast.value = true;
-					setTimeout(() => {
-						showFallbackToast.value = false;
-					}, 8000);
-				}
+				const sourceId = (e as { sourceId?: string }).sourceId;
+				if (!sourceId?.startsWith("tianditu-")) return;
+				basemapUnavailable.value = true;
+				basemapStatusCode.value = (e.error as { status?: number })?.status;
 			});
 
 			mapInstance.on("load", async () => {
@@ -1881,99 +1413,7 @@
 	 */
 	function addCustomLayers(mapInstance: MapLibreMap) {
 		const styleLayers = mapInstance.getStyle().layers;
-		const firstSymbolLayer = styleLayers.find((l) => l.type === "symbol");
-
-		// Terrain DEM
-		if (!mapInstance.getSource("terrain-dem")) {
-			mapInstance.addSource("terrain-dem", {
-				type: "raster-dem",
-				tiles: [
-					"https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
-				],
-				tileSize: 256,
-				encoding: "terrarium",
-				maxzoom: 14,
-			});
-		}
-		if (!mapInstance.getLayer("terrain-hillshade")) {
-			mapInstance.addLayer(
-				{
-					id: "terrain-hillshade",
-					type: "hillshade",
-					source: "terrain-dem",
-					paint: {
-						"hillshade-intensity": 0.35,
-						"hillshade-shadow-color": "#5a4630",
-						"hillshade-highlight-color": "#ffffff",
-						"hillshade-accent-color": "#5a4630",
-					},
-				},
-				firstSymbolLayer?.id,
-			);
-		}
-
-		// 暗色底图略降对比度（不改动底图 JSON）
-		if (!mapInstance.getSource("basemap-dim-src")) {
-			mapInstance.addSource("basemap-dim-src", {
-				type: "geojson",
-				data: {
-					type: "FeatureCollection",
-					features: [
-						{
-							type: "Feature",
-							properties: {},
-							geometry: {
-								type: "Polygon",
-								coordinates: [
-									[
-										[-180, -85],
-										[180, -85],
-										[180, 85],
-										[-180, 85],
-										[-180, -85],
-									],
-								],
-							},
-						},
-					],
-				},
-			});
-		}
-		if (!mapInstance.getLayer("basemap-dim")) {
-			mapInstance.addLayer(
-				{
-					id: "basemap-dim",
-					type: "fill",
-					source: "basemap-dim-src",
-					layout: {
-						visibility: isDarkBasemapStyle(currentStyleId.value)
-							? "visible"
-							: "none",
-					},
-					paint: {
-						"fill-color": "#000000",
-						"fill-opacity": [
-							"interpolate",
-							["linear"],
-							["zoom"],
-							2,
-							0.14,
-							6,
-							0.1,
-							12,
-							0.05,
-						],
-					},
-				},
-				firstSymbolLayer?.id,
-			);
-		} else {
-			mapInstance.setLayoutProperty(
-				"basemap-dim",
-				"visibility",
-				isDarkBasemapStyle(currentStyleId.value) ? "visible" : "none",
-			);
-		}
+		const firstSymbolLayer = styleLayers.find((l) => /^tianditu-(cva|cia|cta)$/.test(l.id));
 
 		// ── Weather / wind / temp source ────────────────────────────────────────
 		if (!mapInstance.getSource(MAP_WIND_SOURCE_ID)) {
@@ -2056,6 +1496,7 @@
 				type: "symbol",
 				source: MAP_AQI_SOURCE_ID,
 				layout: {
+					"text-font": ["Noto Sans Regular"],
 					visibility: store.showAqiLayer ? "visible" : "none",
 					...aqiLabelLayout(),
 				},
@@ -2317,6 +1758,7 @@
 					type: "symbol",
 					source: MAP_SOURCE_ID,
 					layout: {
+					"text-font": ["Noto Sans Regular"],
 						"icon-image": flightIconImageLayout(),
 						"icon-size": flightIconSizeLayout(),
 						"icon-rotate": ["coalesce", ["get", "heading"], 0],
@@ -2354,6 +1796,7 @@
 				// NOTE: feature-state is NOT supported in MapLibre filter expressions (v4+);
 				// use icon-opacity paint expression instead.
 				layout: {
+					"text-font": ["Noto Sans Regular"],
 					"icon-image": flightHoverIconImageLayout(),
 					"icon-size": flightIconSizeLayout(),
 					"icon-rotate": ["coalesce", ["get", "heading"], 0],
@@ -2409,6 +1852,7 @@
 				type: "symbol",
 				source: MAP_WIND_SOURCE_ID,
 				layout: {
+					"text-font": ["Noto Sans Regular"],
 					visibility: showWindLayer.value ? "visible" : "none",
 					...windArrowLayout(),
 				},
@@ -2422,6 +1866,7 @@
 				type: "symbol",
 				source: MAP_WIND_SOURCE_ID,
 				layout: {
+					"text-font": ["Noto Sans Regular"],
 					visibility: showWindLayer.value ? "visible" : "none",
 					...windLabelLayout(),
 				},
@@ -2435,6 +1880,7 @@
 				type: "symbol",
 				source: MAP_AIRPORT_SOURCE_ID,
 				layout: {
+					"text-font": ["Noto Sans Regular"],
 					visibility: showHubAirports.value ? "visible" : "none",
 					...hubAirportLabelLayout(),
 				},
@@ -2448,6 +1894,7 @@
 				type: "symbol",
 				source: MAP_AIRPORT_HIGHLIGHT_SOURCE_ID,
 				layout: {
+					"text-font": ["Noto Sans Regular"],
 					visibility: "none",
 					...hubAirportHighlightLabelLayout(),
 				},
@@ -2461,6 +1908,7 @@
 				type: "symbol",
 				source: MAP_HOVER_SOURCE_ID,
 				layout: {
+					"text-font": ["Noto Sans Regular"],
 					...flightHoverLabelLayout(),
 					visibility: "visible",
 					"symbol-placement": "point",
@@ -2511,17 +1959,17 @@
 			const feature = event.features?.[0];
 			if (!feature) return;
 			const props = feature.properties ?? {};
-			const id = String(props.id ?? "天气网格");
+			const id = String(props.id ?? ui.value.grid);
 			const flightCount = Number(props.flight_count ?? 0);
 			const hasWeather = Boolean(props.has_weather);
 			const temp = props.temperature_c;
 			const desc = String(props.description ?? "").trim();
-			let weatherLine = "天气：尚未采集（等待环境层轮询）";
+			let weatherLine = `${ui.value.weather}: ${ui.value.weatherPending}`;
 			if (hasWeather) {
 				const parts: string[] = [];
 				if (temp != null && temp !== "") parts.push(`${temp}°C`);
-				if (desc) parts.push(desc);
-				weatherLine = `天气：${parts.join(" ") || "已采集"}`;
+				if (desc) parts.push(formatWeatherDescription(desc, localeStore.locale) || "");
+				weatherLine = `${ui.value.weather}: ${parts.join(" ") || ui.value.collected}`;
 			}
 			if (!gridPopup) {
 				gridPopup = new maplibregl.Popup({
@@ -2529,15 +1977,14 @@
 					maxWidth: "300px",
 				});
 			}
-			gridPopup
-				.setLngLat(event.lngLat)
-				.setHTML(
-					`<div style="font-size:13px;line-height:1.55"><div><strong>${id}</strong></div><div>范围内航班：${flightCount} 架</div><div>${weatherLine}</div></div>`.replaceAll(
-						"div",
-						"div",
-					),
-				)
-				.addTo(mapInstance);
+			const content = document.createElement("div");
+			content.style.cssText = "font-size:13px;line-height:1.55";
+			for (const line of [id, `${ui.value.flightsInArea}: ${flightCount} ${ui.value.unitFlights}`, weatherLine]) {
+				const row = document.createElement("div");
+				row.textContent = line;
+				content.appendChild(row);
+			}
+			gridPopup.setLngLat(event.lngLat).setDOMContent(content).addTo(mapInstance);
 		};
 		mapInstance.on("click", MAP_GRID_FILL_LAYER_ID, handleGridCellClick);
 		mapInstance.on("mouseenter", MAP_GRID_FILL_LAYER_ID, () => {
@@ -2579,52 +2026,19 @@
 		},
 	);
 
-	let regionHighlightRequest = 0;
 
-	/** 按行政区划真实边界高亮并适配视野（中国 DataV / 美国州界；其余回退 bbox） */
+	/** Region bounds locate the view only; they are never rendered as administrative borders. */
 	async function applyRegionFilterHighlight(
-		cc: string | null,
-		regionCode: string | null,
-		cityCode: string | null,
-		districtCode: string | null,
+		cc: string | null, regionCode: string | null, cityCode: string | null, districtCode: string | null,
 	) {
 		if (!map.value) return;
-		const src = map.value.getSource(MAP_REGION_HIGHLIGHT_SOURCE) as
-			| GeoJSONSource
-			| undefined;
-		if (!src) return;
-
-		if (!cc) {
-			src.setData({ type: "FeatureCollection", features: [] });
-			return;
-		}
-
-		const reqId = ++regionHighlightRequest;
-		try {
-			const geometry = await resolveRegionBoundaryGeometry(
-				cc,
-				regionCode,
-				cityCode,
-				districtCode,
-			);
-			if (reqId !== regionHighlightRequest) return;
-			src.setData({
-				type: "FeatureCollection",
-				features: [geometryToFeature(geometry)],
-			});
-			const bounds = bboxFromGeometry(geometry);
-			if (bounds) {
-				map.value.fitBounds(bounds as LngLatBoundsLike, {
-					padding: 48,
-					maxZoom: 10,
-					duration: 800,
-					essential: true,
-				});
-			}
-		} catch {
-			if (reqId !== regionHighlightRequest) return;
-			src.setData({ type: "FeatureCollection", features: [] });
-		}
+		const src = map.value.getSource(MAP_REGION_HIGHLIGHT_SOURCE) as GeoJSONSource | undefined;
+		src?.setData({ type: "FeatureCollection", features: [] });
+		if (!cc) return;
+		const bbox = resolveGeoBBox(cc, regionCode, cityCode, districtCode);
+		if (bbox) map.value.fitBounds([[bbox.lonMin, bbox.latMin], [bbox.lonMax, bbox.latMax]], {
+			padding: 48, maxZoom: 10, duration: 800, essential: true,
+		});
 	}
 
 	watch(
@@ -2758,6 +2172,7 @@
 		setLayerVisibility(MAP_GRID_MARKER_LAYER_ID, show);
 		syncEnvironmentalOverlayMode();
 		if (mapInstance) ensureOverlayLayerOrder(mapInstance);
+		if (mapInstance) applyOverlaySymbolFonts(mapInstance);
 		if (show) {
 			void refreshWeatherGrid(false);
 			startGridRefresh();
@@ -2788,10 +2203,6 @@
 		},
 	);
 
-	// 语言设置变化时重新应用双语标注（防抖，避免连续 setLayoutProperty）
-	watch([labelLines, labelLine1, labelLine2], () => {
-		scheduleBilingualLabels();
-	});
 
 	// 选中航班时自动切换到详情 tab
 	watch(
@@ -2840,10 +2251,6 @@
 			clearTimeout(_hubDataTimer);
 			_hubDataTimer = null;
 		}
-		if (_labelApplyTimer !== null) {
-			clearTimeout(_labelApplyTimer);
-			_labelApplyTimer = null;
-		}
 		cancelScheduledMapUpdates();
 		resetFlightFeatureStateTracking();
 		flightFeatureIndex = null;
@@ -2851,6 +2258,7 @@
 		overlayOrderIdlePending = false;
 		stopGridRefresh();
 		store.disconnectSocket();
+		placeLabels?.dispose();
 		map.value?.remove();
 		map.value = null;
 	});
@@ -2872,36 +2280,6 @@
 		overflow: hidden;
 	}
 
-	.fallback-toast {
-		position: fixed;
-		top: calc(var(--nav-h) + 8px);
-		left: 50%;
-		transform: translateX(-50%);
-		z-index: 1000;
-		background: var(--warning);
-		color: #fff;
-		padding: 10px 20px;
-		border-radius: var(--radius-lg);
-		font-size: 13px;
-		cursor: pointer;
-		box-shadow: var(--shadow-panel);
-		max-width: 480px;
-		text-align: center;
-	}
-
-	.toast-enter-active,
-	.toast-leave-active {
-		transition:
-			opacity 0.3s,
-			transform 0.3s;
-	}
-
-	.toast-enter-from,
-	.toast-leave-to {
-		opacity: 0;
-		transform: translateX(-50%) translateY(-12px);
-	}
-
 	.map-shell {
 		flex: 1;
 		position: relative;
@@ -2913,6 +2291,13 @@
 	.map-canvas {
 		width: 100%;
 		height: 100%;
+	}
+
+	.map-basemap-status {
+		position: absolute; left: 16px; bottom: 40px; z-index: 5;
+		padding: 8px 12px; max-width: calc(100% - 32px);
+		background: var(--bg-surface); color: var(--warning); border-radius: 8px;
+		font-size: 12px; pointer-events: none;
 	}
 
 	.map-status {

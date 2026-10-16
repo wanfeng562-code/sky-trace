@@ -1,6 +1,7 @@
 <template>
 	<div class="stats-page">
-		<div v-if="loading" class="stats-loading">
+		<div v-if="!BACKEND_ENABLED" class="stats-loading" role="status">{{ t("business.backendPaused") }}</div>
+		<div v-else-if="loading" class="stats-loading">
 			<div class="stats-spinner"></div>
 			<span>{{ t("stats.loading") }}</span>
 		</div>
@@ -114,6 +115,7 @@
 		TooltipComponent,
 	} from "echarts/components";
 	import { CanvasRenderer } from "echarts/renderers";
+	import { BACKEND_ENABLED } from "../config/backend";
 	import { fetchFlightStats } from "../services/api";
 	import { translate, useLocaleStore } from "../i18n";
 	import { useFlightStore } from "../stores/flight";

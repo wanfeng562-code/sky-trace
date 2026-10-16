@@ -13,7 +13,7 @@
 					v-model="store.searchKeyword"
 					class="fl-search-input"
 					type="text"
-					placeholder="呼号 / 航班号"
+					:placeholder="i18n.flightList.search"
 				/>
 			</label>
 		</div>
@@ -30,22 +30,22 @@
 			</button>
 		</div>
 
-		<div v-if="!store.wsOnline" class="fl-offline">
-			实时连接已断开，正在重连…
+		<div v-if="!store.wsOnline && BACKEND_ENABLED" class="fl-offline">
+			{{ i18n.flightList.offline }}
 		</div>
 
 		<div class="fl-list-head">
-			<span>结果</span>
+			<span>{{ i18n.flightList.results }}</span>
 			<strong>{{ flights.length.toLocaleString() }}</strong>
-			<span class="fl-list-hint">架</span>
+			<span class="fl-list-hint">{{ i18n.flightList.unit }}</span>
 			<span
 				v-if="store.flights.length > flights.length"
 				class="fl-filter-hint"
 			>
-				· 共 {{ store.flights.length.toLocaleString() }} 架
+				· {{ t("flightList.total", { n: store.flights.length.toLocaleString() }) }}
 			</span>
 			<span v-else-if="store.activeFilterCount" class="fl-filter-hint">
-				· {{ store.activeFilterCount }} 项筛选
+				· {{ t("flightList.filters", { n: String(store.activeFilterCount) }) }}
 			</span>
 		</div>
 
@@ -69,7 +69,7 @@
 				<button
 					type="button"
 					:class="['fl-mark', { on: store.isMarked(flight.flight_id) }]"
-					:title="store.isMarked(flight.flight_id) ? '取消标记' : '标记航班'"
+					:title="store.isMarked(flight.flight_id) ? i18n.marked.remove : i18n.marked.add"
 					@click.stop="store.toggleMarkFlight(flight.flight_id)"
 				>
 					★
@@ -87,7 +87,7 @@
 							(flight.altitude_ft ?? 0) > 100 ? 'st-air' : 'st-gnd',
 						]"
 					>
-						{{ (flight.altitude_ft ?? 0) > 100 ? "空中" : "地面" }}
+						{{ (flight.altitude_ft ?? 0) > 100 ? i18n.flightList.airborne : i18n.flightList.ground }}
 					</span>
 				</div>
 				<div class="fl-card-sub">
@@ -95,7 +95,7 @@
 						{{ flight.departure_airport ?? "?" }} →
 						{{ flight.arrival_airport ?? "?" }}
 					</span>
-					<span v-else class="fl-muted">航路未知</span>
+					<span v-else class="fl-muted">{{ i18n.flightList.unknownRoute }}</span>
 				</div>
 				<div class="fl-card-meta">
 					<span>{{
@@ -112,20 +112,26 @@
 			</div>
 		</RecycleScroller>
 
-		<div v-if="!flights.length" class="fl-empty">无匹配航班</div>
+		<div v-if="!flights.length" class="fl-empty">{{ i18n.flightList.empty }}</div>
 	</div>
 </template>
 
 <script setup lang="ts">
+	import { BACKEND_ENABLED } from "../../config/backend";
 	import { RecycleScroller } from "vue-virtual-scroller";
+	import { computed } from "vue";
+	import { translate, useLocaleStore } from "../../i18n";
 	import { useFlightStore } from "../../stores/flight";
 	import type { FlightBrief } from "../../types/flight";
 
-	const STATUS_TABS = [
-		{ label: "全部", value: "all" as const },
-		{ label: "空中", value: "airborne" as const },
-		{ label: "地面", value: "on_ground" as const },
-	];
+	const localeStore = useLocaleStore();
+	const i18n = computed(() => localeStore.t);
+	const t = (key: string, params: Record<string, string>) => translate(localeStore.t, key, params);
+	const STATUS_TABS = computed(() => [
+		{ label: i18n.value.flightList.all, value: "all" as const },
+		{ label: i18n.value.flightList.airborne, value: "airborne" as const },
+		{ label: i18n.value.flightList.ground, value: "on_ground" as const },
+	]);
 
 	defineProps<{
 		flights: FlightBrief[];

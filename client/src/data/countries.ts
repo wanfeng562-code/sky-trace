@@ -3,9 +3,10 @@
  * Level 1: Country  (CountryInfo)
  * Level 2: Province / State / Region  (SubRegion)
  *
+ * Bounding boxes are approximate flight filters, not administrative boundaries or airspace.
  * Bbox format: [latMin, latMax, lonMin, lonMax]
- * Note: city/district level would require a geocoding API and is out of scope
- * for static client-side data.
+ * Curated city/district filters are defined in geoNested.ts and geoHierarchy.ts;
+ * their coverage is limited to those static entries.
  */
 
 export interface SubRegion {
@@ -315,7 +316,7 @@ const CN_REGIONS: SubRegion[] = [
 	},
 	{
 		code: "MO",
-		nameZh: "澳门",
+		nameZh: "澳门特别行政区",
 		latMin: 22.1,
 		latMax: 22.22,
 		lonMin: 113.53,
@@ -324,7 +325,7 @@ const CN_REGIONS: SubRegion[] = [
 	},
 	{
 		code: "HK",
-		nameZh: "香港",
+		nameZh: "香港特别行政区",
 		latMin: 22.1,
 		latMax: 22.6,
 		lonMin: 113.8,
@@ -333,7 +334,7 @@ const CN_REGIONS: SubRegion[] = [
 	},
 	{
 		code: "TW",
-		nameZh: "台湾",
+		nameZh: "台湾省",
 		latMin: 21.8,
 		latMax: 25.4,
 		lonMin: 119.9,

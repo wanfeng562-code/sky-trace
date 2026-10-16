@@ -1,0 +1,211 @@
+{
+  "source": "https://github.com/maplibre/demotiles",
+  "commit": "601ae60796ceceda2cbd2ed3d2ea92d17a84be4b",
+  "font": "Noto Sans Regular",
+  "files": [
+    {
+      "file": "Noto Sans Regular/0-255.pbf",
+      "sha256": "ef1f38a3f1978591e846e9eaddf8a54f7047f546fc6aaed7872cc53151a5de78"
+    },
+    {
+      "file": "Noto Sans Regular/1024-1279.pbf",
+      "sha256": "834adb7f3ea9944ea530214841ee098e5482e85180f14df85036939261e0ffbb"
+    },
+    {
+      "file": "Noto Sans Regular/10240-10495.pbf",
+      "sha256": "fb8684a8f45544bdbf0741482fa0ec2eec246b2e809565aa814a90a2fd995055"
+    },
+    {
+      "file": "Noto Sans Regular/10496-10751.pbf",
+      "sha256": "6c016c6d12dbd60b6046578e832b6509d102929c782ce0b5252a6777a60de149"
+    },
+    {
+      "file": "Noto Sans Regular/10752-11007.pbf",
+      "sha256": "80ff9ff939388f1e734912a13fccb989b651d57654b0dbdd7b7a98c804e1115c"
+    },
+    {
+      "file": "Noto Sans Regular/11008-11263.pbf",
+      "sha256": "7a326ef58773f48f57a5af3c3681dd17c2f7f1603fac82e34a2639a7b5726719"
+    },
+    {
+      "file": "Noto Sans Regular/11264-11519.pbf",
+      "sha256": "5fef3fa21327b0a38e8f650fd3e6edd26aa7e11ac32a39915da7115e9d9366b2"
+    },
+    {
+      "file": "Noto Sans Regular/11520-11775.pbf",
+      "sha256": "69b80c3d3699d8a6b706f2d600d4b2d34a97ec2068301e50a6e2e2b8e965fc3c"
+    },
+    {
+      "file": "Noto Sans Regular/11776-12031.pbf",
+      "sha256": "3170127815670b54e6ebecd89a451b1b72aa3d3b4aee3dcf3c32d7d6dc20f966"
+    },
+    {
+      "file": "Noto Sans Regular/12032-12287.pbf",
+      "sha256": "f397dab640d90fc68a466ccb52b30e04995755643be3cc73c241dd585d9b6398"
+    },
+    {
+      "file": "Noto Sans Regular/12288-12543.pbf",
+      "sha256": "6bbe541b57b43364b5b707686bd992898469e5d6f66e7be31828b2d2e6f5c4f7"
+    },
+    {
+      "file": "Noto Sans Regular/1280-1535.pbf",
+      "sha256": "0f4f3f76dd76836efbcdf3c35219449aa46defb1d3e8e0f9b51153a539e64454"
+    },
+    {
+      "file": "Noto Sans Regular/1536-1791.pbf",
+      "sha256": "50d81369a7ec80d4a77efa83e63bbb250ec3337f997a39f5e17c76ae7ab74ae8"
+    },
+    {
+      "file": "Noto Sans Regular/1792-2047.pbf",
+      "sha256": "3ca76bcee53478a4031c82e34d084f6c39d0bbbb2c80cbeecec604e113bdeabd"
+    },
+    {
+      "file": "Noto Sans Regular/2048-2303.pbf",
+      "sha256": "5046177baae772470eca56772137e8f4369435c387e371abb81a15ca2fdd515b"
+    },
+    {
+      "file": "Noto Sans Regular/2304-2559.pbf",
+      "sha256": "ffd4493751f2860e8e9749c80015e0b33b64124144ead3b5ee64d34789809129"
+    },
+    {
+      "file": "Noto Sans Regular/256-511.pbf",
+      "sha256": "992557f9e2574cfb9a75e16c7b52832578849772b7c9a6e480d6213fb008fe5d"
+    },
+    {
+      "file": "Noto Sans Regular/2560-2815.pbf",
+      "sha256": "ca8ffdd0c46d59021f510ca45c5584b1b7aba9c38a8c028210664d11bdb32180"
+    },
+    {
+      "file": "Noto Sans Regular/2816-3071.pbf",
+      "sha256": "00d71ea66156169cc123f7f0b96648ca73e9b685d28c61ee9d0434d3d47810a5"
+    },
+    {
+      "file": "Noto Sans Regular/3072-3327.pbf",
+      "sha256": "8e99a7fd778e8f91192f8620641530988020e5a0be89ebf92805a57f6aeb2619"
+    },
+    {
+      "file": "Noto Sans Regular/3328-3583.pbf",
+      "sha256": "8e3b3992f650816ed003199991f1f72e7713c8f07535ac9912c78882fb6c1170"
+    },
+    {
+      "file": "Noto Sans Regular/3584-3839.pbf",
+      "sha256": "161ede5132456f9f640ad783ca23ac5c5923bb88672da41a49ac336519b4e529"
+    },
+    {
+      "file": "Noto Sans Regular/3840-4095.pbf",
+      "sha256": "a372cab4e82f43b0b0ec1cfb30bb94e7ef7716a5d769159564a4c43b66baa862"
+    },
+    {
+      "file": "Noto Sans Regular/4096-4351.pbf",
+      "sha256": "aeb80cf9bd04db8b8efbdf9a106053503ccfb8817c6a4813f1e2a9a9854eae6d"
+    },
+    {
+      "file": "Noto Sans Regular/4352-4607.pbf",
+      "sha256": "8bccece0835a6b67465756a6453f191122a3f0dc16d8eb5733ce904b6cc9b7e3"
+    },
+    {
+      "file": "Noto Sans Regular/4608-4863.pbf",
+      "sha256": "0238b46c53798367facebb2e38e9a8454ded2edfb6c3a9e2db8242f9750011d6"
+    },
+    {
+      "file": "Noto Sans Regular/4864-5119.pbf",
+      "sha256": "46fdc7f4c20b5260a140a0b3a391968f3e4eaecda06e9075f05ab1e0dcd08569"
+    },
+    {
+      "file": "Noto Sans Regular/512-767.pbf",
+      "sha256": "a4c5cdf9623cb0bf7e9c6b0e8be4bf38b524bc29819dd2276c8ca63d5e43dd21"
+    },
+    {
+      "file": "Noto Sans Regular/5120-5375.pbf",
+      "sha256": "06b3028cc4418e4e4df0d12d80588bf6fa23b543cb4fbe5eb33edcaa5c30f6fb"
+    },
+    {
+      "file": "Noto Sans Regular/5376-5631.pbf",
+      "sha256": "63ee2bf53eae2bbba77619ee9536295f1c3c10ccd414ab82073163ef40f581da"
+    },
+    {
+      "file": "Noto Sans Regular/5632-5887.pbf",
+      "sha256": "c1b6207c721723d1d295257ef17f2967e4054407daa1474d2336675a48459b00"
+    },
+    {
+      "file": "Noto Sans Regular/5888-6143.pbf",
+      "sha256": "61af686900ae6952d98deb0de38164d9708ac54b13bf66906a8237fc0ebfa4b2"
+    },
+    {
+      "file": "Noto Sans Regular/6144-6399.pbf",
+      "sha256": "ee7ca2adbf300171953353a0169146454b0e46af8d0234db24fc30478b7b3bc5"
+    },
+    {
+      "file": "Noto Sans Regular/6400-6655.pbf",
+      "sha256": "99d848652781c757949a76983992c37ebc157d9453b6ee0f1548f5b106f8c534"
+    },
+    {
+      "file": "Noto Sans Regular/65280-65535.pbf",
+      "sha256": "e39025c183136637d2ad76494ab682df1aa7c0a0c9a18d3ebb4843157dd2e2e9"
+    },
+    {
+      "file": "Noto Sans Regular/6656-6911.pbf",
+      "sha256": "a0ffef7c866f13c6ceb4d18d5501ef744cf81a0aab484f21019b8ad2e1074370"
+    },
+    {
+      "file": "Noto Sans Regular/6912-7167.pbf",
+      "sha256": "81b09b8d6f8b6b2db3ea4bc68267c763c2e054ad52e98d1444b7d6d1b22236f9"
+    },
+    {
+      "file": "Noto Sans Regular/7168-7423.pbf",
+      "sha256": "262e2da78132e30c28661f5d45f531ac213e76d338484fd1043864439b1858d5"
+    },
+    {
+      "file": "Noto Sans Regular/7424-7679.pbf",
+      "sha256": "6842bf4b3519d7608493dc67e52a105de5472839f9107596972342537b487e26"
+    },
+    {
+      "file": "Noto Sans Regular/768-1023.pbf",
+      "sha256": "6e27cdd6edce5b11c469a24b333ecefc0d4b082491b71d6924ce0be6eeba71c3"
+    },
+    {
+      "file": "Noto Sans Regular/7680-7935.pbf",
+      "sha256": "21672116227dc22128cb43a58ae19d4bc5ebb5d7d321600317d2df828dced514"
+    },
+    {
+      "file": "Noto Sans Regular/7936-8191.pbf",
+      "sha256": "86b1ed721f2b8d6497e16bb284e37d229af46f266474db844b14fbf1981f7032"
+    },
+    {
+      "file": "Noto Sans Regular/8192-8447.pbf",
+      "sha256": "f061e5b4e42e5925228534d8822b423a029569263db09f5ce44573600d45295f"
+    },
+    {
+      "file": "Noto Sans Regular/8448-8703.pbf",
+      "sha256": "9e333bdeee3c44c429fb7f6911b3c1602a69402d541908832282d5eb3a467003"
+    },
+    {
+      "file": "Noto Sans Regular/8704-8959.pbf",
+      "sha256": "5d3487a5bc60e2a68545c4b7aadcd12664559f1d7b6962f760ca98a1b39a5104"
+    },
+    {
+      "file": "Noto Sans Regular/8960-9215.pbf",
+      "sha256": "11e45178aece59770d8dbe2e0cbe84e306f68ffc71637e568491a3cbf07378b8"
+    },
+    {
+      "file": "Noto Sans Regular/9216-9471.pbf",
+      "sha256": "678371e9b6db7ad3453c7c35842f6cfa1e304accb5e2428e86b3c67fc42f6a42"
+    },
+    {
+      "file": "Noto Sans Regular/9472-9727.pbf",
+      "sha256": "ca910fd782bf73975f26e6b6547731aefdc3e5f747adf36d672b8bde340e0fd1"
+    },
+    {
+      "file": "Noto Sans Regular/9728-9983.pbf",
+      "sha256": "38cdd944ad56e8da5c86aa8e97e365c79a351145602023aa5fd2917f8877bed1"
+    },
+    {
+      "file": "Noto Sans Regular/9984-10239.pbf",
+      "sha256": "74dcdf3f3e13f04f52af9ec232b0a94ce600842e44bf818bbfa30de219fd047a"
+    },
+    {
+      "file": "Noto Sans Regular/LICENSE.md",
+      "sha256": "9f6ffa4d4ceb839c1d12b830273c1d9f01cb0f5e2535f6143b8f7befdd5650d5"
+    }
+  ]
+}

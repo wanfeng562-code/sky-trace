@@ -1,4 +1,7 @@
+import { BUSINESS_ZH } from "../business";
+
 export default {
+	business: BUSINESS_ZH,
 	nav: {
 		map: "实时地图",
 		stats: "数据统计",
@@ -16,6 +19,11 @@ export default {
 		filters: "筛选",
 		hubs: "枢纽",
 	},
+	flightList: {
+		search: "呼号 / 航班号", all: "全部", airborne: "空中", ground: "地面",
+		offline: "实时连接已断开，正在重连…", results: "结果", unit: "架",
+		total: "共 {n} 架", filters: "{n} 项筛选", unknownRoute: "航路未知", empty: "无匹配航班",
+	},
 	mapControls: {
 		layers: "图层",
 		basemap: "底图",
@@ -27,34 +35,8 @@ export default {
 	mapLayers: {
 		title: "叠加图层",
 	},
-	mapLabelField: {
-		"name:en": "英语",
-		"name:zh-Hans": "简体中文",
-		"name:zh-Hant": "繁体中文",
-		"name:ja": "日语",
-		"name:ko": "韩语",
-		name: "本地名称",
-	},
 	mapStyles: {
-		maptiler: {
-			"streets-v2-dark": "街道深色",
-			"streets-v2": "街道浅色",
-			"outdoor-v2": "户外地形",
-			hybrid: "卫星影像",
-			"dataviz-dark": "数据深色",
-			dataviz: "数据浅色",
-		},
-		stadia: {
-			alidade_smooth_dark: "深色平滑",
-			alidade_smooth: "浅色平滑",
-			stamen_terrain: "地形图",
-			alidade_satellite: "卫星影像",
-		},
-		openfreemap: {
-			liberty: "自然风格",
-			bright: "明亮风格",
-			positron: "简洁浅色",
-		},
+		tianditu: { vector: "电子地图", imagery: "卫星影像", terrain: "地形图" },
 	},
 	overlays: {
 		showAqi: {
@@ -187,14 +169,16 @@ export default {
 		source: "地图来源",
 		style: "底图样式",
 		labelLang: "标注语言",
-		uiLang: "界面语言",
+		uiLang: "界面与地名语言",
 		labelLines: "行数",
 		singleLine: "单行",
 		doubleLine: "双行",
 		line1: "第一行",
 		line2: "第二行",
 		language: "语言",
-		fallback: "已自动回退到 {provider}",
+		officialLabels: "中文使用天地图官方注记；英文使用 GeoNames 地名，部分名称采用拉丁字母音译。",
+		localLabelsUnavailable: "英文地名暂时无法加载，已恢复天地图中文注记。",
+		unavailable: "天地图底图暂不可用，请联系管理员。",
 	},
 	locale: {
 		"zh-CN": "简体中文",

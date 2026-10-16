@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
+import os
 
 from PySide6.QtCore import QUrl
 from PySide6.QtWebChannel import QWebChannel
@@ -29,12 +29,7 @@ class MainWindow(QMainWindow):
         self._load_frontend()
 
     def _load_frontend(self) -> None:
-        project_root = Path(__file__).resolve().parents[2]
-        dist_index = project_root / "client" / "dist" / "index.html"
-
-        if dist_index.exists():
-            self.view.load(QUrl.fromLocalFile(str(dist_index)))
-            return
-
-        # TODO: Read dev URL from env/config instead of hard-coded fallback.
-        self.view.load(QUrl("http://localhost:5173"))
+        # Browser keys need an authorized HTTP origin; file:// has no domain.
+        # Start Vite (or a local production preview) before opening the wrapper.
+        frontend_url = os.environ.get("SKYTRACE_FRONTEND_URL", "").strip() or "http://127.0.0.1:5173"
+        self.view.load(QUrl(frontend_url))

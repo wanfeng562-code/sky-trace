@@ -15,7 +15,7 @@
 						v-model="keyword"
 						class="hl-search-input"
 						type="text"
-						placeholder="IATA / 中文名 / 城市"
+						:placeholder="ui.hubSearch"
 					/>
 				</label>
 				<span class="hl-count">{{ filtered.length }}</span>
@@ -25,13 +25,13 @@
 					:class="['hl-chip', { active: sortBy === 'traffic' }]"
 					@click="sortBy = 'traffic'"
 				>
-					按航班量
+					{{ ui.sortTraffic }}
 				</button>
 				<button
 					:class="['hl-chip', { active: sortBy === 'iata' }]"
 					@click="sortBy = 'iata'"
 				>
-					按 IATA
+					{{ ui.sortIata }}
 				</button>
 			</div>
 			<RecycleScroller
@@ -52,22 +52,22 @@
 						}}</span>
 					</div>
 					<div class="hl-name-zh">
-						{{ formatAirportDisplay(hub.airport).nameZh }}
+						{{ display(hub.airport).name }}
 					</div>
 					<div class="hl-meta">
-						<span>离港 {{ hub.departures.length }}</span>
-						<span>到港 {{ hub.arrivals.length }}</span>
-						<span>相关 {{ hub.relatedFlights.length }}</span>
+						<span>{{ ui.departures }} {{ hub.departures.length }}</span>
+						<span>{{ ui.arrivals }} {{ hub.arrivals.length }}</span>
+						<span>{{ ui.related }} {{ hub.relatedFlights.length }}</span>
 					</div>
 				</div>
 			</RecycleScroller>
-			<div v-if="!filtered.length" class="hl-empty">无匹配枢纽机场</div>
+			<div v-if="!filtered.length" class="hl-empty">{{ ui.noHubs }}</div>
 		</template>
 
 		<!-- 详情视图 -->
 		<template v-else>
 			<div class="hl-detail-head">
-				<button class="hl-back" @click="onBack">← 返回列表</button>
+				<button class="hl-back" @click="onBack">← {{ ui.backToList }}</button>
 				<div class="hl-detail-title">
 					<span class="hl-iata-lg">{{ selected.airport.iata }}</span>
 					<span :class="['hl-tier', `tier-${selected.hubTier}`]">{{
@@ -75,33 +75,33 @@
 					}}</span>
 				</div>
 				<div class="hl-name-zh lg">
-					{{ formatAirportDisplay(selected.airport).nameZh }}
+					{{ display(selected.airport).name }}
 				</div>
-				<div class="hl-name-en">{{ selected.airport.name }}</div>
+				<div v-if="localeStore.locale === 'zh-CN'" class="hl-name-en">{{ selected.airport.name }}</div>
 				<div class="hl-loc">
-					{{ formatAirportDisplay(selected.airport).cityZh }}
-					<span v-if="formatAirportDisplay(selected.airport).countryLabel">
-						· {{ formatAirportDisplay(selected.airport).countryLabel }}
+					{{ display(selected.airport).city }}
+					<span v-if="display(selected.airport).country">
+						· {{ display(selected.airport).country }}
 					</span>
 				</div>
 				<div class="hl-stats">
-					<span>离港 {{ selected.departures.length }}</span>
-					<span>到港 {{ selected.arrivals.length }}</span>
-					<span>飞行中 {{ selected.airborneCount }}</span>
-					<span>地面 {{ selected.groundCount }}</span>
+					<span>{{ ui.departures }} {{ selected.departures.length }}</span>
+					<span>{{ ui.arrivals }} {{ selected.arrivals.length }}</span>
+					<span>{{ ui.airborne }} {{ selected.airborneCount }}</span>
+					<span>{{ ui.ground }} {{ selected.groundCount }}</span>
 				</div>
 				<div class="hl-actions">
 					<button
 						:class="['hl-btn', { primary: hubAction === 'locate' }]"
 						@click="onLocate"
 					>
-						地图定位
+						{{ ui.locate }}
 					</button>
 					<button
 						:class="['hl-btn', { primary: hubAction === 'schedule' }]"
 						@click="onSchedule"
 					>
-						时刻表
+						{{ ui.schedule }}
 					</button>
 				</div>
 			</div>
@@ -110,19 +110,19 @@
 				<section class="hl-flight-section">
 					<header class="hl-section-sticky">
 						<div class="hl-section-title">
-							离港航班
+							{{ ui.departureFlights }}
 							<span class="hl-section-count">{{
 								selected.departures.length
 							}}</span>
 						</div>
 						<div class="hl-table-head">
-							<span>呼号</span>
-							<span>航路</span>
-							<span>状态</span>
+							<span>{{ ui.callsign }}</span>
+							<span>{{ ui.route }}</span>
+							<span>{{ ui.status }}</span>
 						</div>
 					</header>
 				<div v-if="!selected.departures.length" class="hl-section-empty">
-					暂无离港航班
+					{{ ui.noDepartures }}
 				</div>
 				<div
 					v-for="f in selected.departures"
@@ -136,7 +136,7 @@
 						{{ f.arrival_airport ?? "--" }}</span
 					>
 					<span class="hl-flight-meta">{{
-						(f.altitude_ft ?? 0) > 100 ? "飞行中" : "地面"
+						(f.altitude_ft ?? 0) > 100 ? ui.airborne : ui.ground
 					}}</span>
 				</div>
 				</section>
@@ -144,19 +144,19 @@
 				<section class="hl-flight-section">
 					<header class="hl-section-sticky">
 						<div class="hl-section-title">
-							到港航班
+							{{ ui.arrivalFlights }}
 							<span class="hl-section-count">{{
 								selected.arrivals.length
 							}}</span>
 						</div>
 						<div class="hl-table-head">
-							<span>呼号</span>
-							<span>航路</span>
-							<span>状态</span>
+							<span>{{ ui.callsign }}</span>
+							<span>{{ ui.route }}</span>
+							<span>{{ ui.status }}</span>
 						</div>
 					</header>
 				<div v-if="!selected.arrivals.length" class="hl-section-empty">
-					暂无到港航班
+					{{ ui.noArrivals }}
 				</div>
 				<div
 					v-for="f in selected.arrivals"
@@ -170,7 +170,7 @@
 						{{ f.arrival_airport ?? "--" }}</span
 					>
 					<span class="hl-flight-meta">{{
-						(f.altitude_ft ?? 0) > 100 ? "飞行中" : "地面"
+						(f.altitude_ft ?? 0) > 100 ? ui.airborne : ui.ground
 					}}</span>
 				</div>
 				</section>
@@ -180,8 +180,14 @@
 </template>
 
 <script setup lang="ts">
+	import { useBusinessLocale } from "../i18n/useBusinessLocale";
+	const { ui } = useBusinessLocale();
 	import { computed, ref, watch } from "vue";
 	import { RecycleScroller } from "vue-virtual-scroller";
+	import { useLocaleStore } from "../i18n";
+	import { airportDisplayForLocale } from "../data/airportDisplay";
+	const localeStore = useLocaleStore();
+	const display = (airport: AirportInfo) => airportDisplayForLocale(airport, localeStore.locale);
 	import { formatAirportDisplay } from "../data/airportDisplay";
 	import type { HubAirportSummary } from "../utils/hubAirportList";
 	import { buildHubAirportSummaries } from "../utils/hubAirportList";
@@ -271,9 +277,9 @@
 	}
 
 	function tierLabel(tier: 1 | 2 | 3): string {
-		if (tier === 1) return "繁忙";
-		if (tier === 2) return "中等";
-		return "一般";
+		if (tier === 1) return ui.value.tierBusy;
+		if (tier === 2) return ui.value.tierMedium;
+		return ui.value.tierNormal;
 	}
 </script>
 

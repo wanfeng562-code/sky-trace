@@ -1,5 +1,7 @@
 from pathlib import Path
 
+raise SystemExit("Retired migration script: its template targets the old map providers. Edit client/src/views/MapView.vue directly; see docs/地图页面配置说明文档.md.")
+
 p = Path(__file__).resolve().parents[1] / "client" / "src" / "views" / "MapView.vue"
 text = p.read_text(encoding="utf-8")
 start = text.index("<template>")

@@ -138,7 +138,6 @@ export function plannedRouteGlowLinePaint(): LineLayerSpecification["paint"] {
 		"line-width": 7,
 		"line-opacity": 0.45,
 		"line-blur": 1,
-		"line-cap": "round",
 	};
 }
 
@@ -148,8 +147,6 @@ export function plannedRouteLinePaint(): LineLayerSpecification["paint"] {
 		"line-color": "#22d3ee",
 		"line-width": 4,
 		"line-opacity": 1,
-		"line-cap": "round",
-		"line-join": "round",
 	};
 }
 
@@ -254,7 +251,7 @@ function isValidCoord(lat: number | null | undefined, lon: number | null | undef
 /** 剩余航程起点：飞机当前实时位置 */
 export function resolveFlightMapPosition(
 	flight: FlightBrief | null,
-	detail: Pick<FlightBrief, "lat" | "lon"> | null,
+	detail: Partial<Pick<FlightBrief, "lat" | "lon">> | null,
 	trackPoints: readonly TrackPoint[],
 ): { lat: number; lon: number } | null {
 	if (flight && isValidCoord(flight.lat, flight.lon)) {

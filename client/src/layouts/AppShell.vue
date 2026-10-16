@@ -66,7 +66,7 @@
 					<span class="nav-stat-sep">·</span>
 					<span :class="['ws-inline', store.wsOnline ? 'online' : 'offline']">
 						<span class="ws-dot"></span>
-						{{ store.wsOnline ? t("metrics.live") : t("metrics.offline") }}
+						{{ !BACKEND_ENABLED ? t("business.paused") : store.wsOnline ? t("metrics.live") : t("metrics.offline") }}
 					</span>
 				</div>
 				<span
@@ -74,10 +74,11 @@
 					:class="['ws-pill', store.wsOnline ? 'online' : 'offline']"
 				>
 					<span class="ws-dot"></span>
-					{{ store.wsOnline ? t("metrics.live") : t("metrics.offline") }}
+					{{ !BACKEND_ENABLED ? t("business.paused") : store.wsOnline ? t("metrics.live") : t("metrics.offline") }}
 				</span>
 			</div>
 		</nav>
+		<div v-if="!BACKEND_ENABLED" class="backend-notice" role="status">{{ t("business.backendPaused") }}</div>
 		<main class="app-content">
 			<RouterView v-slot="{ Component }">
 				<KeepAlive :include="['MapView']">
@@ -90,6 +91,7 @@
 
 <script setup lang="ts">
 	import { computed, KeepAlive } from "vue";
+	import { BACKEND_ENABLED } from "../config/backend";
 	import { useRoute } from "vue-router";
 	import { translate, useLocaleStore } from "../i18n";
 	import { useFlightStore } from "../stores/flight";
@@ -110,6 +112,7 @@
 </script>
 
 <style scoped>
+	.backend-notice { padding: 9px 16px; background: var(--bg-raised); color: var(--text-secondary); border-bottom: 1px solid var(--border); font-size: 13px; }
 	.app-shell {
 		display: flex;
 		flex-direction: column;
