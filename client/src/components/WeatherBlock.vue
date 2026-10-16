@@ -3,24 +3,24 @@
 		<div class="wx-item">
 			<span class="wx-val">{{ weather.temp_c ?? "--" }}</span>
 			<span class="wx-unit">°C</span>
-			<span class="wx-key">温度</span>
+			<span class="wx-key">{{ ui.temperature }}</span>
 		</div>
 		<div class="wx-item">
 			<span class="wx-val">{{ weather.humidity_pct ?? "--" }}</span>
 			<span class="wx-unit">%</span>
-			<span class="wx-key">湿度</span>
+			<span class="wx-key">{{ ui.humidity }}</span>
 		</div>
 		<div class="wx-item">
 			<span class="wx-val">{{ weather.wind_speed_mps ?? "--" }}</span>
 			<span class="wx-unit">m/s</span>
-			<span class="wx-key">风速</span>
+			<span class="wx-key">{{ ui.windSpeed }}</span>
 		</div>
 		<div class="wx-item">
 			<span class="wx-val">{{
 				weather.wind_deg != null ? weather.wind_deg + "°" : "--"
 			}}</span>
 			<span class="wx-unit"></span>
-			<span class="wx-key">风向</span>
+			<span class="wx-key">{{ ui.windDirection }}</span>
 		</div>
 		<div class="wx-item">
 			<span class="wx-val">{{
@@ -29,16 +29,18 @@
 					: "--"
 			}}</span>
 			<span class="wx-unit">km</span>
-			<span class="wx-key">能见度</span>
+			<span class="wx-key">{{ ui.visibility }}</span>
 		</div>
 		<div v-if="descriptionText" class="wx-item wx-desc">
 			<span class="wx-val wx-val-sm">{{ descriptionText }}</span>
-			<span class="wx-key">天气</span>
+			<span class="wx-key">{{ ui.weather }}</span>
 		</div>
 	</div>
 </template>
 
 <script setup lang="ts">
+	import { useBusinessLocale } from "../i18n/useBusinessLocale";
+	const { ui } = useBusinessLocale();
 	import { computed } from "vue";
 	import { useLocaleStore } from "../i18n";
 	import type { WeatherInfo } from "../types/flight";

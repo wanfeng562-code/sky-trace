@@ -18,18 +18,9 @@ export const HUB_LABEL_COLOR = "#fde047";
 export const HUB_LABEL_HALO = "rgba(0, 0, 0, 0.88)";
 
 /** 略降底图对比度的暗色样式 */
-const DARK_BASEMAP_STYLE_IDS = new Set([
-	"streets-v2-dark",
-	"dataviz-dark",
-	"alidade_smooth_dark",
-	"liberty",
-	"hybrid",
-	"satellite",
-	"satellite-hybrid",
-	"alidade_satellite",
-]);
+const DARK_BASEMAP_STYLE_IDS = new Set(["imagery"]);
 
 export function isDarkBasemapStyle(styleId: string): boolean {
-	const key = styleId === "satellite-hybrid" ? "hybrid" : styleId;
+	const key = styleId;
 	return DARK_BASEMAP_STYLE_IDS.has(key);
 }

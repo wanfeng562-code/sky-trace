@@ -304,7 +304,11 @@ DASHBOARD_HTML = """<!doctype html>
     }
 
     function cardItem(name, value) {
-      return '<div class="card"><div class="k">' + name + '</div><div class="v">' + value + '</div></div>';
+      return '<div class="card"><div class="k">' + escapeHtml(name) + '</div><div class="v">' + escapeHtml(value) + '</div></div>';
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[ch]));
     }
 
     function renderSummary(summary, stats) {
@@ -329,16 +333,16 @@ DASHBOARD_HTML = """<!doctype html>
           ? '<span style="background:#f97316;color:#fff;border-radius:4px;padding:1px 5px;font-size:11px;margin-right:4px">FR24</span>'
           : '<span style="background:#0a7a5b;color:#fff;border-radius:4px;padding:1px 5px;font-size:11px;margin-right:4px">OpenSky</span>';
         const detailBtn = isFr24
-          ? ' <button class="btn" data-fr24-id="' + f.flight_id + '" style="border-color:#f97316">FR24详情</button>'
+          ? ' <button class="btn" data-fr24-id="' + escapeHtml(f.flight_id) + '" style="border-color:#f97316">FR24详情</button>'
           : "";
         return "<tr>"
-          + "<td>" + badge + (f.flight_id ?? "") + "</td>"
-          + "<td>" + (f.callsign ?? "") + "</td>"
-          + "<td>" + (f.lat ?? "") + "</td>"
-          + "<td>" + (f.lon ?? "") + "</td>"
-          + "<td>" + (f.altitude_ft ?? "") + "</td>"
-          + "<td>" + (f.speed_kts ?? "") + "</td>"
-          + '<td><button class="btn" data-id="' + f.flight_id + '">基础</button>' + detailBtn + "</td>"
+          + "<td>" + badge + escapeHtml(f.flight_id) + "</td>"
+          + "<td>" + escapeHtml(f.callsign) + "</td>"
+          + "<td>" + escapeHtml(f.lat) + "</td>"
+          + "<td>" + escapeHtml(f.lon) + "</td>"
+          + "<td>" + escapeHtml(f.altitude_ft) + "</td>"
+          + "<td>" + escapeHtml(f.speed_kts) + "</td>"
+          + '<td><button class="btn" data-id="' + escapeHtml(f.flight_id) + '">基础</button>' + detailBtn + "</td>"
           + "</tr>";
       });
       document.getElementById("flightRows").innerHTML = rows.join("");
@@ -360,11 +364,11 @@ DASHBOARD_HTML = """<!doctype html>
     function renderTrackRows(points) {
       const rows = points.map((p) => {
         return "<tr>"
-          + "<td>" + (p.ts ?? "") + "</td>"
-          + "<td>" + (p.lat ?? "") + "</td>"
-          + "<td>" + (p.lon ?? "") + "</td>"
-          + "<td>" + (p.altitude_ft ?? "") + "</td>"
-          + "<td>" + (p.speed_kts ?? "") + "</td>"
+          + "<td>" + escapeHtml(p.ts) + "</td>"
+          + "<td>" + escapeHtml(p.lat) + "</td>"
+          + "<td>" + escapeHtml(p.lon) + "</td>"
+          + "<td>" + escapeHtml(p.altitude_ft) + "</td>"
+          + "<td>" + escapeHtml(p.speed_kts) + "</td>"
           + "</tr>";
       });
       document.getElementById("trackRows").innerHTML = rows.join("");

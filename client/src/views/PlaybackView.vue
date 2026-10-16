@@ -1,5 +1,7 @@
-﻿<template>
+<template>
 	<div class="playback-page">
+		<div v-if="basemapError" class="basemap-warning" role="status">{{ basemapError }}</div>
+		<div v-else-if="localLabelsUnavailable" class="basemap-warning" role="status">{{ localeStore.t.basemap.localLabelsUnavailable }}</div>
 		<!-- 顶部查询�?/ 摘要�?-->
 		<div class="query-bar">
 			<template v-if="!frames.length">
@@ -93,7 +95,7 @@
 								</div>
 								<button
 									class="qb-btn-load"
-									:disabled="loadingData"
+									:disabled="loadingData || !BACKEND_ENABLED"
 									@click="loadPlayback"
 								>
 									{{ loadingData ? t("playback.loading") : t("playback.load") }}
@@ -102,7 +104,9 @@
 						</div>
 						<div class="qb-toolbar-secondary">
 							<div class="qb-chip-row">
-								<span class="qb-chip-label">{{ t("playback.rangeQuick") }}</span>
+								<span class="qb-chip-label">{{
+									t("playback.rangeQuick")
+								}}</span>
 								<button
 									v-for="p in rangePresets"
 									:key="p.hours"
@@ -115,7 +119,9 @@
 								</button>
 							</div>
 							<div class="qb-chip-row">
-								<span class="qb-chip-label">{{ t("playback.sampleQuick") }}</span>
+								<span class="qb-chip-label">{{
+									t("playback.sampleQuick")
+								}}</span>
 								<button
 									v-for="opt in commonIntervalOptions"
 									:key="opt.value"
@@ -129,7 +135,9 @@
 								<button
 									type="button"
 									class="qb-chip qb-chip-more"
-									:class="{ active: showMoreIntervals || isExtraIntervalActive }"
+									:class="{
+										active: showMoreIntervals || isExtraIntervalActive,
+									}"
 									@click="showMoreIntervals = !showMoreIntervals"
 								>
 									{{ t("playback.moreSamples") }}
@@ -161,76 +169,79 @@
 			</template>
 			<template v-else>
 				<div class="qb-summary-row">
-				<div class="qb-summary">
-					<svg class="qb-icon" viewBox="0 0 20 20" fill="currentColor">
-						<path
-							fill-rule="evenodd"
-							d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z"
-							clip-rule="evenodd"
-						/>
-					</svg>
-					<span class="qb-range"
-						>{{ startInput.replace("T", " ") }} → {{ endInput.replace("T", " ") }}</span
+					<div class="qb-summary">
+						<svg class="qb-icon" viewBox="0 0 20 20" fill="currentColor">
+							<path
+								fill-rule="evenodd"
+								d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z"
+								clip-rule="evenodd"
+							/>
+						</svg>
+						<span class="qb-range"
+							>{{ startInput.replace("T", " ") }} →
+							{{ endInput.replace("T", " ") }}</span
+						>
+						<span class="qb-badge"
+							>{{ frames.length }} {{ t("playback.framesWord") }} ·
+							{{ durationStr }}</span
+						>
+					</div>
+					<div
+						v-if="playbackMode === 'global' || !focusFlightId"
+						class="qb-live-stats"
 					>
-					<span class="qb-badge"
-						>{{ frames.length }} {{ t("playback.framesWord") }} ·
-						{{ durationStr }}</span
+						<span
+							><strong>{{ currentFlightCount.toLocaleString() }}</strong>
+							{{ t("playback.flights") }}</span
+						>
+						<span class="qb-stat-sep">·</span>
+						<span class="qb-stat-air"
+							><strong>{{ airborneCount.toLocaleString() }}</strong>
+							{{ t("playback.airborne") }}</span
+						>
+						<span class="qb-stat-sep">·</span>
+						<span
+							><strong>{{
+								(currentFlightCount - airborneCount).toLocaleString()
+							}}</strong>
+							{{ t("playback.ground") }}</span
+						>
+						<span class="qb-stat-sep">·</span>
+						<span>{{ progressPct.toFixed(0) }}%</span>
+					</div>
+					<div v-else class="qb-focus-stat">
+						<strong>{{ focusFlightLabel }}</strong>
+						<span class="qb-stat-sep">·</span>
+						<span>{{ progressPct.toFixed(0) }}%</span>
+					</div>
+					<div class="qb-mode-seg qb-mode-seg-compact">
+						<button
+							type="button"
+							class="qb-mode-seg-btn"
+							:class="{ active: playbackMode === 'global' }"
+							@click="setPlaybackMode('global')"
+						>
+							{{ t("playback.modeGlobal") }}
+						</button>
+						<button
+							type="button"
+							class="qb-mode-seg-btn"
+							:class="{ active: playbackMode === 'single' }"
+							@click="setPlaybackMode('single')"
+						>
+							{{ t("playback.modeSingle") }}
+						</button>
+					</div>
+					<label
+						v-if="playbackMode === 'single' && focusFlightId"
+						class="qb-follow"
 					>
-				</div>
-				<div
-					v-if="playbackMode === 'global' || !focusFlightId"
-					class="qb-live-stats"
-				>
-					<span
-						><strong>{{ currentFlightCount.toLocaleString() }}</strong>
-						{{ t("playback.flights") }}</span
-					>
-					<span class="qb-stat-sep">·</span>
-					<span class="qb-stat-air"
-						><strong>{{ airborneCount.toLocaleString() }}</strong>
-						{{ t("playback.airborne") }}</span
-					>
-					<span class="qb-stat-sep">·</span>
-					<span
-						><strong>{{
-							(currentFlightCount - airborneCount).toLocaleString()
-						}}</strong>
-						{{ t("playback.ground") }}</span
-					>
-					<span class="qb-stat-sep">·</span>
-					<span>{{ progressPct.toFixed(0) }}%</span>
-				</div>
-				<div v-else class="qb-focus-stat">
-					<strong>{{ focusFlightLabel }}</strong>
-					<span class="qb-stat-sep">·</span>
-					<span>{{ progressPct.toFixed(0) }}%</span>
-				</div>
-				<div class="qb-mode-seg qb-mode-seg-compact">
-					<button
-						type="button"
-						class="qb-mode-seg-btn"
-						:class="{ active: playbackMode === 'global' }"
-						@click="setPlaybackMode('global')"
-					>
-						{{ t("playback.modeGlobal") }}
+						<input v-model="followAircraft" type="checkbox" />
+						{{ t("playback.followAircraft") }}
+					</label>
+					<button class="qb-btn-reset" @click="resetPlayback">
+						{{ t("playback.requery") }}
 					</button>
-					<button
-						type="button"
-						class="qb-mode-seg-btn"
-						:class="{ active: playbackMode === 'single' }"
-						@click="setPlaybackMode('single')"
-					>
-						{{ t("playback.modeSingle") }}
-					</button>
-				</div>
-				<label
-					v-if="playbackMode === 'single' && focusFlightId"
-					class="qb-follow"
-				>
-					<input v-model="followAircraft" type="checkbox" />
-					{{ t("playback.followAircraft") }}
-				</label>
-				<button class="qb-btn-reset" @click="resetPlayback">{{ t("playback.requery") }}</button>
 				</div>
 			</template>
 		</div>
@@ -252,10 +263,7 @@
 			>
 				<p class="map-hint-body">{{ t("playback.pickFlightFirst") }}</p>
 			</div>
-			<div
-				v-else-if="currentFlightCount === 0"
-				class="map-hint map-hint-warn"
-			>
+			<div v-else-if="currentFlightCount === 0" class="map-hint map-hint-warn">
 				<p class="map-hint-body">{{ t("playback.mapEmptyNoFlights") }}</p>
 			</div>
 			<PlaybackFlightListPanel
@@ -265,10 +273,7 @@
 				:mode="playbackMode"
 				@select="onCatalogSelect"
 			/>
-			<aside
-				v-if="frames.length && activeFlightId"
-				class="pb-detail"
-			>
+			<aside v-if="frames.length && activeFlightId" class="pb-detail">
 				<div class="pb-detail-header">
 					<span>{{ t("playback.detail") }}</span>
 					<button
@@ -286,114 +291,129 @@
 						</svg>
 					</button>
 				</div>
-				<FlightDetailCard
-					:detail="displayDetail"
-					:loading="detailLoading"
-				/>
+				<FlightDetailCard :detail="displayDetail" :loading="detailLoading" />
 			</aside>
 			<!-- 底部悬浮控制台：仅数据加载后显示 -->
 			<div v-if="frames.length" class="play-dock">
-			<!-- 时间�?-->
-			<div class="dock-timeline">
-				<span class="ts-edge">{{ fmtTs(frames[0]?.ts ?? "") }}</span>
-				<input
-					v-model.number="currentFrame"
-					type="range"
-					min="0"
-					:max="frames.length - 1"
-					class="tl-slider"
-					@input="onSliderInput"
-				/>
-				<span class="ts-edge">{{
-					fmtTs(frames[frames.length - 1]?.ts ?? "")
-				}}</span>
+				<!-- 时间�?-->
+				<div class="dock-timeline">
+					<span class="ts-edge">{{ fmtTs(frames[0]?.ts ?? "") }}</span>
+					<input
+						v-model.number="currentFrame"
+						type="range"
+						min="0"
+						:max="frames.length - 1"
+						class="tl-slider"
+						@input="onSliderInput"
+					/>
+					<span class="ts-edge">{{
+						fmtTs(frames[frames.length - 1]?.ts ?? "")
+					}}</span>
+				</div>
+				<!-- 控制�?-->
+				<div class="dock-controls">
+					<div class="dock-btns">
+						<button
+							class="dk-btn"
+							:title="t('playback.dockStart')"
+							@click="goToStart"
+						>
+							<svg viewBox="0 0 20 20" fill="currentColor">
+								<path
+									d="M8.445 14.832A1 1 0 0010 14v-2.798l5.445 3.63A1 1 0 0017 14V6a1 1 0 00-1.555-.832L10 8.798V6a1 1 0 00-1.555-.832l-6 4a1 1 0 000 1.664l6 4z"
+								/>
+							</svg>
+						</button>
+						<button
+							class="dk-btn"
+							:title="t('playback.dockPrev')"
+							@click="stepBack"
+						>
+							<svg viewBox="0 0 20 20" fill="currentColor">
+								<path
+									d="M11 4a7 7 0 100 14A7 7 0 0011 4zM9.5 9.172l3 1.5-3 1.5V9.172zM7 10a4 4 0 018 0v.001a4 4 0 01-8 0V10z"
+								/>
+							</svg>
+						</button>
+						<button
+							class="dk-btn dk-play"
+							:disabled="!canPlayback"
+							:title="
+								playing ? t('playback.dockPause') : t('playback.dockPlay')
+							"
+							@click="togglePlay"
+						>
+							<svg v-if="!playing" viewBox="0 0 20 20" fill="currentColor">
+								<path
+									fill-rule="evenodd"
+									d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"
+									clip-rule="evenodd"
+								/>
+							</svg>
+							<svg v-else viewBox="0 0 20 20" fill="currentColor">
+								<path
+									fill-rule="evenodd"
+									d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z"
+									clip-rule="evenodd"
+								/>
+							</svg>
+						</button>
+						<button
+							class="dk-btn"
+							:title="t('playback.dockNext')"
+							@click="stepForward"
+						>
+							<svg viewBox="0 0 20 20" fill="currentColor">
+								<path
+									fill-rule="evenodd"
+									d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 1.414L10.586 9H7a1 1 0 100 2h3.586l-1.293 1.293a1 1 0 101.414 1.414l3-3a1 1 0 000-1.414z"
+									clip-rule="evenodd"
+								/>
+							</svg>
+						</button>
+						<button
+							class="dk-btn"
+							:title="t('playback.dockEnd')"
+							@click="goToEnd"
+						>
+							<svg viewBox="0 0 20 20" fill="currentColor">
+								<path
+									d="M4.555 5.168A1 1 0 003 6v8a1 1 0 001.555.832L10 11.202V14a1 1 0 001.555.832l6-4a1 1 0 000-1.664l-6-4A1 1 0 0010 6v2.798l-5.445-3.63z"
+								/>
+							</svg>
+						</button>
+						<button
+							:class="['dk-btn', { 'dk-active': loop }]"
+							:title="t('playback.dockLoop')"
+							@click="loop = !loop"
+						>
+							<svg viewBox="0 0 20 20" fill="currentColor">
+								<path
+									fill-rule="evenodd"
+									d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"
+									clip-rule="evenodd"
+								/>
+							</svg>
+						</button>
+					</div>
+					<div class="dock-time">
+						<span class="dk-ts">{{ fmtTs(currentTs) }}</span>
+						<span class="dk-ratio"
+							>{{ currentFrame + 1 }} / {{ frames.length }}</span
+						>
+					</div>
+					<div class="dock-speed">
+						<span class="dk-spd-lbl">{{ t("playback.dockSpeed") }}</span>
+						<select v-model.number="speed" class="dk-spd-sel">
+							<option :value="0.5">0.5×</option>
+							<option :value="1">1×</option>
+							<option :value="2">2×</option>
+							<option :value="5">5×</option>
+							<option :value="10">10×</option>
+						</select>
+					</div>
+				</div>
 			</div>
-			<!-- 控制�?-->
-			<div class="dock-controls">
-				<div class="dock-btns">
-					<button class="dk-btn" :title="t('playback.dockStart')" @click="goToStart">
-						<svg viewBox="0 0 20 20" fill="currentColor">
-							<path
-								d="M8.445 14.832A1 1 0 0010 14v-2.798l5.445 3.63A1 1 0 0017 14V6a1 1 0 00-1.555-.832L10 8.798V6a1 1 0 00-1.555-.832l-6 4a1 1 0 000 1.664l6 4z"
-							/>
-						</svg>
-					</button>
-					<button class="dk-btn" :title="t('playback.dockPrev')" @click="stepBack">
-						<svg viewBox="0 0 20 20" fill="currentColor">
-							<path
-								d="M11 4a7 7 0 100 14A7 7 0 0011 4zM9.5 9.172l3 1.5-3 1.5V9.172zM7 10a4 4 0 018 0v.001a4 4 0 01-8 0V10z"
-							/>
-						</svg>
-					</button>
-					<button
-						class="dk-btn dk-play"
-						:disabled="!canPlayback"
-						:title="playing ? t('playback.dockPause') : t('playback.dockPlay')"
-						@click="togglePlay"
-					>
-						<svg v-if="!playing" viewBox="0 0 20 20" fill="currentColor">
-							<path
-								fill-rule="evenodd"
-								d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"
-								clip-rule="evenodd"
-							/>
-						</svg>
-						<svg v-else viewBox="0 0 20 20" fill="currentColor">
-							<path
-								fill-rule="evenodd"
-								d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z"
-								clip-rule="evenodd"
-							/>
-						</svg>
-					</button>
-					<button class="dk-btn" :title="t('playback.dockNext')" @click="stepForward">
-						<svg viewBox="0 0 20 20" fill="currentColor">
-							<path
-								fill-rule="evenodd"
-								d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 1.414L10.586 9H7a1 1 0 100 2h3.586l-1.293 1.293a1 1 0 101.414 1.414l3-3a1 1 0 000-1.414z"
-								clip-rule="evenodd"
-							/>
-						</svg>
-					</button>
-					<button class="dk-btn" :title="t('playback.dockEnd')" @click="goToEnd">
-						<svg viewBox="0 0 20 20" fill="currentColor">
-							<path
-								d="M4.555 5.168A1 1 0 003 6v8a1 1 0 001.555.832L10 11.202V14a1 1 0 001.555.832l6-4a1 1 0 000-1.664l-6-4A1 1 0 0010 6v2.798l-5.445-3.63z"
-							/>
-						</svg>
-					</button>
-					<button
-						:class="['dk-btn', { 'dk-active': loop }]"
-						:title="t('playback.dockLoop')"
-						@click="loop = !loop"
-					>
-						<svg viewBox="0 0 20 20" fill="currentColor">
-							<path
-								fill-rule="evenodd"
-								d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"
-								clip-rule="evenodd"
-							/>
-						</svg>
-					</button>
-				</div>
-				<div class="dock-time">
-					<span class="dk-ts">{{ fmtTs(currentTs) }}</span>
-					<span class="dk-ratio"
-						>{{ currentFrame + 1 }} / {{ frames.length }}</span
-					>
-				</div>
-				<div class="dock-speed">
-					<span class="dk-spd-lbl">{{ t("playback.dockSpeed") }}</span>
-					<select v-model.number="speed" class="dk-spd-sel">
-						<option :value="0.5">0.5×</option>
-						<option :value="1">1×</option>
-						<option :value="2">2×</option>
-						<option :value="5">5×</option>
-						<option :value="10">10×</option>
-					</select>
-				</div>
-			</div>
-		</div>
 		</div>
 	</div>
 </template>
@@ -402,6 +422,7 @@
 	import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 	import maplibregl from "maplibre-gl";
 	import "maplibre-gl/dist/maplibre-gl.css";
+	import { BACKEND_ENABLED } from "../config/backend";
 	import { fetchPlaybackFrames } from "../services/api";
 	import { translate, useLocaleStore } from "../i18n";
 	import { useFlightStore } from "../stores/flight";
@@ -418,7 +439,10 @@
 		PlaybackFlightPoint,
 		PlaybackFrame,
 	} from "../types/flight";
-	import { resolveStyleAircraftColor, AIRCRAFT_COLOR } from "../config/aircraftColors";
+	import {
+		resolveStyleAircraftColor,
+		AIRCRAFT_COLOR,
+	} from "../config/aircraftColors";
 	import {
 		flightHoverIconImageLayout,
 		flightHoverLabelLayout,
@@ -440,11 +464,12 @@
 	} from "../utils/flightTrackMap";
 	import { HIDE_ALL_FEATURES_FILTER } from "../utils/mapFilters";
 	import {
-		buildOpenFreeMapStyleUrl,
-		isOpenFreeMapPlaceLabelLayer,
-		OPENFREEMAP_LABEL_FONTS,
-		rewriteMapResourceUrl,
+		createBasemapStyle, DEFAULT_BASEMAP_STYLE, TIANDITU_KEY, basemapApprovalNumber,
+		basemapStatusMessage,
+		type MapProvider,
 	} from "../utils/mapBasemap";
+	import { createPlaceLabelController } from "../utils/localPlaceLabels";
+	import { applyOverlaySymbolFonts } from "../config/mapLabelFonts";
 	import { scheduleMapUpdate } from "../utils/mapUpdateScheduler";
 	import {
 		patchFlightGeoJson,
@@ -462,15 +487,7 @@
 	import planeIconRaw from "../icons/plane.svg?raw";
 	import planeGroundIconRaw from "../icons/plane_ground.svg?raw";
 
-	const MAPTILER_KEY = (import.meta.env.VITE_MAPTILER_KEY as string) || "";
-	const STADIA_KEY = (import.meta.env.VITE_STADIA_KEY as string) || "";
-
-	type MapProvider = "maptiler" | "stadia" | "openfreemap";
-
-	const MAP_DEFAULT_PROVIDER =
-		(import.meta.env.VITE_MAP_DEFAULT_PROVIDER as string) || "maptiler";
-	const MAP_DEFAULT_STYLE =
-		(import.meta.env.VITE_MAP_DEFAULT_STYLE as string) || "streets-v2-dark";
+	const MAP_DEFAULT_STYLE = DEFAULT_BASEMAP_STYLE;
 	const MAP_INIT_LNG = parseFloat(
 		(import.meta.env.VITE_MAP_INIT_LNG as string) || "113.2644",
 	);
@@ -480,26 +497,6 @@
 	const MAP_INIT_ZOOM = parseFloat(
 		(import.meta.env.VITE_MAP_INIT_ZOOM as string) || "4",
 	);
-
-	const MAPTILER_STYLE_IDS = [
-		"streets-v2-dark",
-		"streets-v2",
-		"outdoor-v2",
-		"hybrid",
-		"dataviz-dark",
-		"dataviz",
-	] as const;
-	const STADIA_STYLE_IDS = [
-		"alidade_smooth_dark",
-		"alidade_smooth",
-		"stamen_terrain",
-		"alidade_satellite",
-	] as const;
-	const OPENFREEMAP_STYLE_IDS = ["liberty", "bright", "positron"] as const;
-
-	function pickStyleId(ids: readonly string[], want: string): string {
-		return ids.includes(want) ? want : ids[0]!;
-	}
 
 	const SOURCE_ID = "playback-flights";
 	const LAYER_ID = "playback-icons";
@@ -518,8 +515,6 @@
 	const PB_ROUTE_LAYER_ID = "playback-planned-route-line";
 	const PB_AIRPORT_HIGHLIGHT_SOURCE_ID = AIRPORT_HIGHLIGHT_SOURCE;
 	const PB_AIRPORT_HIGHLIGHT_LAYER_ID = AIRPORT_HIGHLIGHT_LAYER;
-	const LABEL_LINE1 = "name:en";
-	const LABEL_LINE2 = "name:zh-Hans";
 
 	const mapEl = ref<HTMLElement | null>(null);
 	let map: maplibregl.Map | null = null;
@@ -538,7 +533,12 @@
 		["feature-state", "marked"],
 		true,
 	];
-	let currentProvider: MapProvider = MAP_DEFAULT_PROVIDER as MapProvider;
+	const basemapStatusCode = ref<number>();
+	const basemapFailed = ref(!TIANDITU_KEY);
+	const basemapError = computed(() => basemapFailed.value ? basemapStatusMessage(basemapStatusCode.value, localeStore.locale) : "");
+	const localLabelsUnavailable = ref(false);
+	let placeLabels: ReturnType<typeof createPlaceLabelController> | null = null;
+	let currentProvider: MapProvider = "tianditu";
 	let currentStyleId = MAP_DEFAULT_STYLE;
 	let flightHoverHandlersBound = false;
 	let hoveredFlightId: string | null = null;
@@ -546,6 +546,7 @@
 	// ── 表单状�?──────────────────────────────────────────────────────────────
 	const store = useFlightStore();
 	const localeStore = useLocaleStore();
+	watch(() => localeStore.locale, () => placeLabels?.refresh());
 	const t = (path: string) => translate(localeStore.t, path);
 
 	const INTERVAL_SECS = [
@@ -650,9 +651,9 @@
 	}
 
 	function intervalForRangeHours(hours: number): number {
-		return RANGE_PRESET_INTERVALS[hours] ?? suggestIntervalForRange(
-			Date.now() - hours * 3600_000,
-			Date.now(),
+		return (
+			RANGE_PRESET_INTERVALS[hours] ??
+			suggestIntervalForRange(Date.now() - hours * 3600_000, Date.now())
 		);
 	}
 
@@ -726,8 +727,7 @@
 			...pb,
 			aircraft_type: api.aircraft_type ?? pb.aircraft_type,
 			status: api.status ?? pb.status,
-			departure_airport_zh:
-				api.departure_airport_zh ?? pb.departure_airport_zh,
+			departure_airport_zh: api.departure_airport_zh ?? pb.departure_airport_zh,
 			arrival_airport_zh: api.arrival_airport_zh ?? pb.arrival_airport_zh,
 			departure_lat: pb.departure_lat ?? api.departure_lat,
 			departure_lon: pb.departure_lon ?? api.departure_lon,
@@ -740,10 +740,7 @@
 	});
 
 	const detailLoading = computed(
-		() =>
-			store.detailLoading &&
-			!!focusFlightId.value &&
-			!playbackDetail.value,
+		() => store.detailLoading && !!focusFlightId.value && !playbackDetail.value,
 	);
 
 	async function handleSelectPlaybackFlight(flightId: string) {
@@ -752,6 +749,7 @@
 		if (map) {
 			updateSelectedHighlight(map);
 			renderFrame(currentFrame.value);
+			applyOverlaySymbolFonts(map);
 			updatePlaybackSelectionOverlays();
 		}
 	}
@@ -891,202 +889,15 @@
 		return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 	}
 
-	function buildMaptilerStyleUrl(styleId: string): string {
-		if (import.meta.env.PROD) {
-			return `https://api.maptiler.com/maps/${styleId}/style.json?key=${MAPTILER_KEY}`;
-		}
-		return `/maptiler-proxy/maps/${styleId}/style.json?key=${MAPTILER_KEY}`;
-	}
-
-	function buildStadiaStyleUrl(styleId: string): string {
-		if (import.meta.env.PROD) {
-			return `https://tiles.stadiamaps.com/styles/${styleId}/style.json${STADIA_KEY ? `?api_key=${STADIA_KEY}` : ""}`;
-		}
-		return `/stadia-proxy/styles/${styleId}/style.json${STADIA_KEY ? `?api_key=${STADIA_KEY}` : ""}`;
-	}
-
-
-	const MAPTILER_STYLE_ALIASES: Record<string, string> = {
-		"satellite-hybrid": "hybrid",
-	};
-
-	function normalizePlaybackMaptiler(styleId: string): string {
-		return MAPTILER_STYLE_ALIASES[styleId] ?? styleId;
-	}
-
-	async function determineInitialStyle(): Promise<{
-		url: string;
-		provider: MapProvider;
-		styleId: string;
-	}> {
-		const wantProvider = MAP_DEFAULT_PROVIDER as MapProvider;
-		const wantStyle = MAP_DEFAULT_STYLE;
-
-		if (wantProvider === "openfreemap") {
-			const styleId = pickStyleId(OPENFREEMAP_STYLE_IDS, wantStyle);
-			return {
-				url: buildOpenFreeMapStyleUrl(styleId),
-				provider: "openfreemap",
-				styleId,
-			};
-		}
-
-		if (wantProvider === "maptiler" && MAPTILER_KEY) {
-			const wantNorm = normalizePlaybackMaptiler(wantStyle);
-			const styleId = pickStyleId(MAPTILER_STYLE_IDS, wantNorm);
-			try {
-				const resp = await fetch(buildMaptilerStyleUrl(styleId));
-				if (resp.ok) {
-					return {
-						url: buildMaptilerStyleUrl(styleId),
-						provider: "maptiler",
-						styleId,
-					};
-				}
-			} catch {
-				// continue fallback chain
-			}
-		}
-
-		if (wantProvider === "stadia" && STADIA_KEY) {
-			const styleId = pickStyleId(STADIA_STYLE_IDS, wantStyle);
-			return {
-				url: buildStadiaStyleUrl(styleId),
-				provider: "stadia",
-				styleId,
-			};
-		}
-
-		if (wantProvider !== "maptiler" && MAPTILER_KEY) {
-			const styleId = MAPTILER_STYLE_IDS[0];
-			try {
-				const resp = await fetch(buildMaptilerStyleUrl(styleId));
-				if (resp.ok) {
-					return {
-						url: buildMaptilerStyleUrl(styleId),
-						provider: "maptiler",
-						styleId,
-					};
-				}
-			} catch {
-				// continue fallback chain
-			}
-		}
-
-		if (STADIA_KEY) {
-			const styleId = STADIA_STYLE_IDS[0];
-			return { url: buildStadiaStyleUrl(styleId), provider: "stadia", styleId };
-		}
-
-		const styleId = OPENFREEMAP_STYLE_IDS[0];
+	async function determineInitialStyle() {
 		return {
-			url: buildOpenFreeMapStyleUrl(styleId),
-			provider: "openfreemap",
-			styleId,
+			url: createBasemapStyle(MAP_DEFAULT_STYLE, TIANDITU_KEY, basemapApprovalNumber(MAP_DEFAULT_STYLE)),
+			provider: "tianditu" as MapProvider, styleId: MAP_DEFAULT_STYLE,
 		};
 	}
 
-	function transformRequest(url: string): { url: string } {
-		return { url: rewriteMapResourceUrl(url) };
-	}
-
-	function applyBilingualLabels(mapInstance: maplibregl.Map) {
-		const style = mapInstance.getStyle();
-		const boldFonts: Record<MapProvider, string[]> = {
-			maptiler: ["Open Sans Bold", "Arial Unicode MS Regular"],
-			stadia: ["Open Sans Bold", "Arial Unicode MS Regular"],
-			openfreemap: [...OPENFREEMAP_LABEL_FONTS],
-		};
-		const fonts = boldFonts[currentProvider] ?? [
-			"Open Sans Bold",
-			"Arial Unicode MS Regular",
-		];
-		const useOpenFreeMapNativePlaceLabels = currentProvider === "openfreemap";
-
-		function line1Expr(langKey: string): unknown[] {
-			if (langKey === "name:en") {
-				return [
-					"coalesce",
-					["get", "name:en"],
-					["get", "name_en"],
-					["get", "name:latin"],
-					["get", "name"],
-					"",
-				];
-			}
-			if (langKey === "name") {
-				return ["coalesce", ["get", "name"], ""];
-			}
-			if (langKey === "name:zh-Hans" || langKey === "name:zh-Hant") {
-				return [
-					"coalesce",
-					["get", langKey],
-					["get", "name:zh"],
-					["get", "name"],
-					"",
-				];
-			}
-			return ["coalesce", ["get", langKey], ["get", "name"], ""];
-		}
-
-		function line2Expr(langKey: string): unknown[] {
-			if (langKey === "name:en") {
-				return ["coalesce", ["get", "name:en"], ["get", "name_en"], ""];
-			}
-			if (langKey === "name") {
-				return ["coalesce", ["get", "name"], ""];
-			}
-			if (langKey === "name:zh-Hans" || langKey === "name:zh-Hant") {
-				return ["coalesce", ["get", langKey], ["get", "name:zh"], ""];
-			}
-			return ["coalesce", ["get", langKey], ""];
-		}
-
-		function hasLang(langKey: string): unknown[] {
-			if (langKey === "name:en") {
-				return ["coalesce", ["get", "name:en"], ["get", "name_en"], ""];
-			}
-			if (langKey === "name:zh-Hans" || langKey === "name:zh-Hant") {
-				return ["coalesce", ["get", langKey], ["get", "name:zh"], ""];
-			}
-			return ["coalesce", ["get", langKey], ""];
-		}
-
-		const textField: unknown[] = [
-			"case",
-			["!=", hasLang(LABEL_LINE2), ""],
-			["concat", line1Expr(LABEL_LINE1), "\n", line2Expr(LABEL_LINE2)],
-			line1Expr(LABEL_LINE1),
-		];
-
-		for (const layer of style.layers) {
-			if (layer.type !== "symbol") continue;
-			const layout =
-				(layer as { layout?: Record<string, unknown> }).layout ?? {};
-			const field = layout["text-field"];
-			if (!field) continue;
-			const fieldStr = JSON.stringify(field);
-			if (!fieldStr.includes("name")) continue;
-			if (/"ref"/.test(fieldStr)) continue;
-			if (
-				layer.id.includes("shield") ||
-				layer.id.includes("route") ||
-				layer.id.includes("-ref")
-			) {
-				continue;
-			}
-
-			if (
-				useOpenFreeMapNativePlaceLabels &&
-				isOpenFreeMapPlaceLabelLayer(layer.id)
-			) {
-				mapInstance.setLayoutProperty(layer.id, "text-font", fonts);
-				continue;
-			}
-
-			mapInstance.setLayoutProperty(layer.id, "text-field", textField);
-			mapInstance.setLayoutProperty(layer.id, "text-font", fonts);
-		}
+	function applyBusinessOverlayFonts(mapInstance: maplibregl.Map) {
+		applyOverlaySymbolFonts(mapInstance);
 	}
 
 	// ── SVG 图标加载（与 MapView 相同�?Canvas 策略，永�?reject）─────────────────────
@@ -1268,7 +1079,7 @@
 	}
 
 	async function reinitPlaybackLayers(mapInstance: maplibregl.Map) {
-		applyBilingualLabels(mapInstance);
+		applyBusinessOverlayFonts(mapInstance);
 		const firstSymbolLayer = mapInstance
 			.getStyle()
 			.layers.find((layer) => layer.type === "symbol");
@@ -1300,7 +1111,11 @@
 				id: TRACK_HISTORY_SEG_LAYER_ID,
 				type: "line",
 				source: PB_TRACK_SEG_SOURCE_ID,
-				layout: { visibility: "none", "line-cap": "round", "line-join": "round" },
+				layout: {
+					visibility: "none",
+					"line-cap": "round",
+					"line-join": "round",
+				},
 				paint: historicalTrackSegmentLinePaint(),
 			});
 		}
@@ -1316,7 +1131,11 @@
 				id: PB_ROUTE_LAYER_ID,
 				type: "line",
 				source: PB_ROUTE_SOURCE_ID,
-				layout: { visibility: "none", "line-cap": "round", "line-join": "round" },
+				layout: {
+					visibility: "none",
+					"line-cap": "round",
+					"line-join": "round",
+				},
 				paint: {
 					"line-color": "#22d3ee",
 					"line-width": 3,
@@ -1399,6 +1218,7 @@
 					type: "symbol",
 					source: SOURCE_ID,
 					layout: {
+					"text-font": ["Noto Sans Regular"],
 						"icon-image": flightIconImageLayout(),
 						"icon-size": flightIconSizeLayout(),
 						"icon-rotate": ["coalesce", ["get", "heading"], 0],
@@ -1454,6 +1274,7 @@
 				source: SOURCE_ID,
 				filter: HIDE_ALL_FEATURES_FILTER,
 				layout: {
+					"text-font": ["Noto Sans Regular"],
 					"icon-image": flightHoverIconImageLayout(),
 					"icon-size": flightIconSizeLayout(),
 					"icon-rotate": ["coalesce", ["get", "heading"], 0],
@@ -1483,6 +1304,7 @@
 				type: "symbol",
 				source: HOVER_SOURCE_ID,
 				layout: {
+					"text-font": ["Noto Sans Regular"],
 					...flightHoverLabelLayout(),
 					visibility: "visible",
 					"symbol-placement": "point",
@@ -1495,7 +1317,12 @@
 		const coral = AIRCRAFT_COLOR.coral;
 		await Promise.all([
 			loadSvgIcon(mapInstance, "icon-plane", planeIconRaw, iconColor),
-			loadSvgIcon(mapInstance, "icon-plane-ground", planeGroundIconRaw, iconColor),
+			loadSvgIcon(
+				mapInstance,
+				"icon-plane-ground",
+				planeGroundIconRaw,
+				iconColor,
+			),
 			loadSvgIcon(mapInstance, "icon-plane-coral", planeIconRaw, coral),
 			loadSvgIcon(
 				mapInstance,
@@ -1512,6 +1339,12 @@
 		updateMarkedHighlight(mapInstance);
 		bindPlaybackFlightHandlers(mapInstance);
 		mapLayersReady = true;
+		if (!placeLabels) placeLabels = createPlaceLabelController(mapInstance, {
+			locale: () => localeStore.locale,
+			style: () => currentStyleId,
+			onUnavailable: value => { localLabelsUnavailable.value = value; },
+		});
+		placeLabels.refresh();
 		if (frames.value.length) renderFrame(currentFrame.value);
 	}
 
@@ -1556,8 +1389,7 @@
 			TRAIL_LENGTH,
 			(i) => flightsAtFrame(i),
 			{
-				singleMode:
-					playbackMode.value === "single" && !!focusFlightId.value,
+				singleMode: playbackMode.value === "single" && !!focusFlightId.value,
 			},
 		);
 	}
@@ -1601,9 +1433,7 @@
 			playbackTrackPoints.value.length >= 2
 				? playbackTrackPoints.value
 				: store.selectedTrackPoints;
-		trackSrc?.setData(
-			buildHistoricalTrackSegmentCollection(trackPts, trackId),
-		);
+		trackSrc?.setData(buildHistoricalTrackSegmentCollection(trackPts, trackId));
 
 		const routeGeo = toPlaybackRouteGeoJson();
 		const routeSrc = map.getSource(PB_ROUTE_SOURCE_ID) as
@@ -1628,10 +1458,7 @@
 			),
 		);
 
-		const hasRoute = !!(
-			detail?.departure_airport ||
-			detail?.arrival_airport
-		);
+		const hasRoute = !!(detail?.departure_airport || detail?.arrival_airport);
 		if (map.getLayer(PB_AIRPORT_HIGHLIGHT_LAYER_ID)) {
 			map.setLayoutProperty(
 				PB_AIRPORT_HIGHLIGHT_LAYER_ID,
@@ -1667,9 +1494,9 @@
 		const trailGeo = buildTrailGeoJson(idx);
 		scheduleMapUpdate(() => {
 			if (!map || !mapLayersReady) return;
-			(map.getSource(SOURCE_ID) as maplibregl.GeoJSONSource | undefined)?.setData(
-				flightGeo,
-			);
+			(
+				map.getSource(SOURCE_ID) as maplibregl.GeoJSONSource | undefined
+			)?.setData(flightGeo);
 			(
 				map.getSource(TRAIL_SOURCE_ID) as maplibregl.GeoJSONSource | undefined
 			)?.setData(trailGeo);
@@ -1699,6 +1526,7 @@
 
 	// ── 数据加载 ─────────────────────────────────────────────────────────────
 	async function loadPlayback() {
+		if (!BACKEND_ENABLED) return;
 		if (!startInput.value || !endInput.value) return;
 		clampEndToNow();
 		trimRangeToMaxFrames();
@@ -1813,10 +1641,7 @@
 		() => [...store.markedFlightIds],
 		() => {
 			if (!map) return;
-			if (
-				hoveredFlightId &&
-				!store.markedFlightIds.includes(hoveredFlightId)
-			) {
+			if (hoveredFlightId && !store.markedFlightIds.includes(hoveredFlightId)) {
 				clearFlightHover(map);
 			}
 			updateMarkedHighlight(map);
@@ -1846,7 +1671,7 @@
 				style: url,
 				center: [MAP_INIT_LNG, MAP_INIT_LAT],
 				zoom: MAP_INIT_ZOOM,
-				attributionControl: true,
+				attributionControl: { compact: false },
 				localIdeographFontFamily:
 					"Noto Sans CJK SC, Microsoft YaHei, SimHei, sans-serif",
 				refreshExpiredTiles: false,
@@ -1854,7 +1679,6 @@
 				maxTileCacheZoomLevels: 8,
 				cancelPendingTileRequestsWhileZooming: false,
 				fadeDuration: 150,
-				transformRequest,
 			});
 
 			map.addControl(new maplibregl.NavigationControl(), "top-right");
@@ -1864,20 +1688,9 @@
 			);
 
 			map.on("error", (e) => {
-				const status = (e.error as { status?: number })?.status;
-				if (
-					(status === 403 || status === 429) &&
-					currentProvider === "maptiler" &&
-					STADIA_KEY
-				) {
-					currentProvider = "stadia";
-					currentStyleId = "alidade_smooth_dark";
-					map!.setStyle(buildStadiaStyleUrl(currentStyleId), { diff: false });
-					flightHoverHandlersBound = false;
-					map!.once("style.load", () => {
-						void reinitPlaybackLayers(map!);
-					});
-				}
+				if (!(e as { sourceId?: string }).sourceId?.startsWith("tianditu-")) return;
+				basemapFailed.value = true;
+				basemapStatusCode.value = (e.error as { status?: number })?.status;
 			});
 
 			map.on("load", () => {
@@ -1900,11 +1713,13 @@
 	});
 	onUnmounted(() => {
 		clearPlayTimer();
+		placeLabels?.dispose();
 		map?.remove();
 	});
 </script>
 
 <style scoped>
+	.basemap-warning { padding: 8px 16px; color: var(--warning); background: var(--bg-surface); font-size: 13px; }
 	/* ── 根布局 */
 	.playback-page {
 		height: 100%;
@@ -2275,7 +2090,6 @@
 		align-items: center;
 		gap: 8px;
 	}
-
 
 	.qb-follow {
 		display: flex;

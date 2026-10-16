@@ -1,4 +1,4 @@
-import type { FilterSpecification } from "maplibre-gl";
+import type { FilterSpecification, ExpressionSpecification } from "maplibre-gl";
 
 /** 图层 filter：不匹配任何要素（勿用 flight_id === ""，可能误高亮） */
 export const HIDE_ALL_FEATURES_FILTER = false;
@@ -15,7 +15,7 @@ export function markedFlightsFilter(
 	return [
 		"any",
 		...list.map(
-			(id) => ["==", ["get", "flight_id"], id] as FilterSpecification,
+			(id) => ["==", ["get", "flight_id"], id] as ExpressionSpecification,
 		),
 	];
 }

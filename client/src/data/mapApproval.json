@@ -1,0 +1,8 @@
+{
+  "number": "GS（2026）4921号",
+  "verifiedAt": "2026-10-13",
+  "provider": "国家基础地理信息中心 / 天地图",
+  "sources": ["https://www.tianditu.gov.cn/", "https://map.tianditu.gov.cn/"],
+  "evidence": "National portal window.mapdrawingApprovalNumber and the online map's visible attribution",
+  "layers": ["vec_w", "cva_w", "img_w", "cia_w", "ter_w", "cta_w"]
+}

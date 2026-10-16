@@ -30,7 +30,7 @@
 
 			</button>
 
-			<button class="ms-rail-btn ms-expand" title="展开侧栏" @click="collapsed = false">
+			<button class="ms-rail-btn ms-expand" :title="ui.expandSidebar" @click="collapsed = false">
 
 				<svg viewBox="0 0 20 20" fill="currentColor" class="ms-rail-icon">
 
@@ -78,7 +78,7 @@
 
 				</div>
 
-				<button class="ms-collapse" title="收起侧栏" @click="collapsed = true">
+				<button class="ms-collapse" :title="ui.collapseSidebar" @click="collapsed = true">
 
 					<svg viewBox="0 0 20 20" fill="currentColor">
 
@@ -157,6 +157,8 @@
 
 
 <script setup lang="ts">
+	import { useBusinessLocale } from "../../i18n/useBusinessLocale";
+	const { ui } = useBusinessLocale();
 
 	import { computed, h, onMounted, watch } from "vue";
 

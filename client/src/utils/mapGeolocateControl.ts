@@ -1,4 +1,6 @@
 import type { IControl, Map as MapLibreMap } from "maplibre-gl";
+import { useLocaleStore } from "../i18n";
+import { watch } from "vue";
 
 /** 约 50km 视野对应的 zoom（按纬度估算） */
 export function zoomForScaleKm(lat: number, km: number): number {
@@ -15,6 +17,7 @@ export class GeolocateControl implements IControl {
 	private _map?: MapLibreMap;
 	private _container?: HTMLDivElement;
 	private _onLocate?: (lat: number, lon: number) => void;
+	private _stopLocaleWatch?: () => void;
 
 	constructor(options?: { onLocate?: (lat: number, lon: number) => void }) {
 		this._onLocate = options?.onLocate;
@@ -29,8 +32,11 @@ export class GeolocateControl implements IControl {
 		const btn = document.createElement("button");
 		btn.type = "button";
 		btn.className = "maplibregl-ctrl-icon sky-geolocate-btn";
-		btn.title = "缩放到我的位置（约 50km）";
-		btn.setAttribute("aria-label", "定位到我的位置");
+		const locale = useLocaleStore();
+		this._stopLocaleWatch = watch(() => locale.locale, () => {
+			btn.title = locale.t.business.geolocationTitle;
+			btn.setAttribute("aria-label", locale.t.business.geolocationLabel);
+		}, { immediate: true });
 		btn.innerHTML =
 			'<svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor"><path d="M10 2a1 1 0 011 1v1.07A6 6 0 0116.93 9H18a1 1 0 110 2h-1.07A6 6 0 0111 15.93V17a1 1 0 11-2 0v-1.07A6 6 0 014.07 11H3a1 1 0 110-2h1.07A6 6 0 019 4.07V3a1 1 0 011-1zm0 4a4 4 0 100 8 4 4 0 000-8z"/></svg>';
 		btn.addEventListener("click", () => this.locate());
@@ -40,6 +46,7 @@ export class GeolocateControl implements IControl {
 	}
 
 	onRemove(): void {
+		this._stopLocaleWatch?.();
 		this._container?.remove();
 		this._map = undefined;
 	}
@@ -56,8 +63,9 @@ export function flyToUserLocation(
 	onLocate?: (lat: number, lon: number) => void,
 ): Promise<void> {
 	return new Promise((resolve) => {
+		const ui = useLocaleStore().t.business;
 		if (!navigator.geolocation) {
-			window.alert("当前浏览器不支持定位");
+			window.alert(ui.geolocationUnsupported);
 			resolve();
 			return;
 		}
@@ -76,8 +84,8 @@ export function flyToUserLocation(
 			(err) => {
 				const msg =
 					err.code === err.PERMISSION_DENIED
-						? "需要位置权限才能定位"
-						: `定位失败：${err.message}`;
+						? ui.geolocationPermission
+						: `${ui.geolocationFailed}: ${err.message}`;
 				window.alert(msg);
 				resolve();
 			},

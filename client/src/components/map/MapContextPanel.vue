@@ -84,17 +84,20 @@
 </template>
 
 <script setup lang="ts">
+	import { computed } from "vue";
+	import { useLocaleStore } from "../../i18n";
+	const localeStore = useLocaleStore();
 	import FlightDetailCard from "../FlightDetailCard.vue";
 	import SchedulePanel from "../SchedulePanel.vue";
 	import type { FlightDetail } from "../../types/flight";
 
-	const UI = {
-		tabDetail: "\u8be6\u60c5",
-		tabSchedule: "\u65f6\u523b",
-		expandPanel: "\u5c55\u5f00\u8be6\u60c5\u680f",
-		collapsePanel: "\u6536\u8d77\uff08\u4fdd\u6301\u9009\u4e2d\uff09",
-		deselectFlight: "\u53d6\u6d88\u9009\u4e2d",
-	} as const;
+	const UI = computed(() => ({
+        tabDetail: localeStore.t.business.detail,
+        tabSchedule: localeStore.t.business.schedule,
+        expandPanel: localeStore.t.business.expandDetail,
+        collapsePanel: localeStore.t.business.collapseDetail,
+        deselectFlight: localeStore.t.business.deselect,
+    }));
 
 	defineProps<{
 		open: boolean;

@@ -10,6 +10,26 @@ import {
 	writePersistentCache,
 } from "../services/persistentCache";
 import { toSimplifiedChinese } from "../utils/zhLocale";
+import { GEO_NAMES_EN } from "./geoNamesEn";
+
+const englishRegions = new Intl.DisplayNames(["en"], { type: "region" });
+
+/** Rebuild display fields on every language change, preserving CN regional membership. */
+export function airportDisplayForLocale(airport: AirportInfo, locale: string): { name: string; city: string; country: string } {
+	if (locale === "zh-CN") {
+		const display = formatAirportDisplay(airport);
+		return { name: display.nameZh, city: display.cityZh, country: display.countryLabel };
+	}
+	const rawCountry = airport.country?.trim() || "";
+	const regions: Record<string, string> = { TW: "Taiwan Province, China", HK: "Hong Kong SAR, China", MO: "Macao SAR, China", Taiwan: "Taiwan Province, China", "Hong Kong": "Hong Kong SAR, China", Macau: "Macao SAR, China", Macao: "Macao SAR, China" };
+	const region = regions[rawCountry];
+	const city = airport.city || "";
+	return {
+		name: /\p{Script=Han}/u.test(airport.name) ? airport.iata : airport.name,
+		city: GEO_NAMES_EN[city] || Object.entries(CITY_ZH).find(([, zh]) => zh === city)?.[0] || (/\p{Script=Han}/u.test(city) ? "" : city),
+		country: region || GEO_NAMES_EN[rawCountry] || (/^[A-Z]{2}$/.test(rawCountry) ? englishRegions.of(rawCountry) || rawCountry : /\p{Script=Han}/u.test(rawCountry) ? "" : rawCountry),
+	};
+}
 
 /** 城市 → 中文（覆盖 seed 中全部枢纽城市） */
 const CITY_ZH: Record<string, string> = {
@@ -232,7 +252,13 @@ const COUNTRY_ZH: Record<string, string> = {
 	AE: "阿联酋",
 	SG: "新加坡",
 	HK: "中国香港",
+	MO: "中国澳门",
 	TW: "中国台湾",
+	Taiwan: "中国台湾",
+	"Taiwan, Province of China": "中国台湾",
+	"Hong Kong": "中国香港",
+	Macao: "中国澳门",
+	Macau: "中国澳门",
 	FR: "法国",
 	DE: "德国",
 };
@@ -280,7 +306,7 @@ export function warmAirportDisplayCache(airports: readonly AirportInfo[]): void 
 		const code = ap.iata?.trim().toUpperCase();
 		if (!code) continue;
 		airportByIata.set(code, ap);
-		keys.push(`ap.zh:${code}`);
+		keys.push(`ap.zh:v2:${code}`);
 		formatAirportDisplay(ap);
 	}
 	void hydratePlaceNamesFromServer(keys);
@@ -292,7 +318,8 @@ export function formatAirportDisplay(airport: AirportInfo): AirportDisplayNames 
 	const memHit = displayMemCache.get(memKey);
 	if (memHit) return memHit;
 
-	const cacheKey = iata ? `ap.zh:${iata}` : "";
+	// v1 names could have been corrupted by the retired character-pair table.
+	const cacheKey = iata ? `ap.zh:v2:${iata}` : "";
 	if (cacheKey) {
 		const serverZh = readCachedPlaceNameZh(cacheKey);
 		if (serverZh) {
@@ -308,17 +335,11 @@ export function formatAirportDisplay(airport: AirportInfo): AirportDisplayNames 
 			displayMemCache.set(memKey, fromServer);
 			return fromServer;
 		}
-		const persisted = readPersistentCache<AirportDisplayNames>(cacheKey);
-		if (persisted && persisted.iata === iata) {
-			displayMemCache.set(memKey, persisted);
-			return persisted;
-		}
 	}
 
 	const result = buildDisplay(airport);
 	displayMemCache.set(memKey, result);
 	if (cacheKey) {
-		writePersistentCache(cacheKey, result, NAME_CACHE_TTL_MS);
 		queuePlaceNameSync({
 			cache_key: cacheKey,
 			name_zh: result.nameZh,
@@ -336,7 +357,7 @@ export function resolvePlaceNameZh(
 	fallback = "",
 ): string {
 	if (!rawName?.trim()) return fallback;
-	const key = `place.zh:${cacheKey}`;
+	const key = `place.zh:v2:${cacheKey}`;
 	const cached = readCachedPlaceNameZh(key);
 	if (cached) return cached;
 	const simplified = normalizeZh(rawName);

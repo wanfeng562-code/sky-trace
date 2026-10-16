@@ -1,63 +1,63 @@
 <template>
 	<div class="filter-panel">
 		<div class="fp-head">
-			<span class="fp-title">高级筛选</span>
+			<span class="fp-title">{{ ui.advancedFilters }}</span>
 			<button
 				v-if="store.activeFilterCount"
 				type="button"
 				class="fp-clear"
 				@click="store.resetAdvancedFilters()"
 			>
-				清除全部
+				{{ ui.clearAll }}
 			</button>
 		</div>
 		<p v-if="store.activeFilterCount" class="fp-summary">
-			已启用 <strong>{{ store.activeFilterCount }}</strong> 项条件
+			{{ ui.filterSummary.replace("{n}", String(store.activeFilterCount)) }}
 		</p>
 
 		<div class="fp-section">
-			<div class="fp-section-label">飞行参数</div>
+			<div class="fp-section-label">{{ ui.flightParameters }}</div>
 			<div class="fp-range-grid">
 				<label class="fp-field">
-					<span>高度 ft（最低）</span>
+					<span>{{ ui.altMin }}</span>
 					<input
 						v-model.number="store.filterAltMin"
 						type="number"
 						class="fp-input"
-						placeholder="不限"
+						:placeholder="ui.unlimited"
 						min="0"
 						step="500"
 					/>
 				</label>
 				<label class="fp-field">
-					<span>高度 ft（最高）</span>
+					<span>{{ ui.altMax }}</span>
 					<input
 						v-model.number="store.filterAltMax"
 						type="number"
 						class="fp-input"
-						placeholder="不限"
+						:placeholder="ui.unlimited"
 						min="0"
 						step="500"
 					/>
 				</label>
 				<label class="fp-field">
-					<span>航速 kts（最低）</span>
+					<span>{{ ui.speedMin }}</span>
 					<input
 						v-model.number="store.filterSpeedMin"
 						type="number"
 						class="fp-input"
-						placeholder="不限"
+						:placeholder="ui.unlimited"
 						min="0"
 						step="10"
 					/>
 				</label>
 				<label class="fp-field">
-					<span>航速 kts（最高）</span>
+					<span>{{ ui.speedMax }}</span>
 					<input
 						v-model.number="store.filterSpeedMax"
 						type="number"
 						class="fp-input"
-						placeholder="不限"
+						:placeholder="ui.unlimited"
 						min="0"
 						step="10"
 					/>
@@ -69,69 +69,69 @@
 					:class="['fp-preset', { active: isAltPresetActive(0, 100) }]"
 					@click="store.applyAltitudePreset(0, 100)"
 				>
-					地面
+					{{ ui.ground }}
 				</button>
 				<button
 					type="button"
 					:class="['fp-preset', { active: isAltPresetActive(1000, 25000) }]"
 					@click="store.applyAltitudePreset(1000, 25000)"
 				>
-					巡航
+					{{ ui.cruise }}
 				</button>
 				<button
 					type="button"
 					:class="['fp-preset', { active: isAltPresetActive(25000, null) }]"
 					@click="store.applyAltitudePreset(25000, null)"
 				>
-					高空
+					{{ ui.highAltitude }}
 				</button>
 			</div>
 		</div>
 
 		<div class="fp-section">
-			<div class="fp-section-label">飞行类型与机型</div>
+			<div class="fp-section-label">{{ ui.typeAndAircraft }}</div>
 			<label class="fp-field fp-field-block">
-				<span>飞行类型</span>
+				<span>{{ ui.flightType }}</span>
 				<select v-model="store.filterFlightType" class="fp-select">
 					<option
 						v-for="opt in FLIGHT_TYPE_OPTIONS"
 						:key="opt.value"
 						:value="opt.value"
 					>
-						{{ opt.label }}
+						{{ flightTypeLabel(opt.value, localeStore.locale) }}
 					</option>
 				</select>
 			</label>
 			<label class="fp-field fp-field-block">
-				<span>机型类别</span>
+				<span>{{ ui.aircraftCategory }}</span>
 				<select
 					class="fp-select"
 					:value="aircraftCategorySelectValue"
 					@change="onAircraftCategoryChange"
 				>
-					<option value="">全部机型</option>
+					<option value="">{{ ui.allAircraft }}</option>
 					<option
 						v-for="cat in AIRCRAFT_CATEGORY_OPTIONS"
 						:key="cat.value"
 						:value="String(cat.value)"
 					>
-						{{ cat.label }}
+						{{ aircraftCategoryLabel(cat.value, localeStore.locale) }}
 					</option>
 				</select>
 			</label>
 		</div>
 
 		<div class="fp-section">
-			<div class="fp-section-label">地区（最多四级）</div>
+			<div class="fp-section-label">{{ ui.regions }}</div>
 			<div class="fp-geo-grid">
 				<select
 					class="fp-select"
 					:value="store.filterCountry ?? ''"
 					@change="onCountryChange"
 				>
-					<option value="">国家/地区</option>
+					<option value="">{{ ui.countryRegion }}</option>
 					<option v-for="c in COUNTRIES" :key="c.code" :value="c.code">
-						{{ c.nameZh }}
+						{{ geoNameForLocale(c, localeStore.locale) }}
 					</option>
 				</select>
 				<select
@@ -142,7 +142,7 @@
 				>
 					<option value="">{{ level2Label }}</option>
 					<option v-for="r in provinces" :key="r.code" :value="r.code">
-						{{ r.nameZh }}
+						{{ geoNameForLocale(r, localeStore.locale) }}
 					</option>
 				</select>
 				<select
@@ -153,7 +153,7 @@
 				>
 					<option value="">{{ level3Label }}</option>
 					<option v-for="c in cities" :key="c.code" :value="c.code">
-						{{ c.nameZh }}
+						{{ geoNameForLocale(c, localeStore.locale) }}
 					</option>
 				</select>
 				<select
@@ -164,7 +164,7 @@
 				>
 					<option value="">{{ level4Label }}</option>
 					<option v-for="d in districts" :key="d.code" :value="d.code">
-						{{ d.nameZh }}
+						{{ geoNameForLocale(d, localeStore.locale) }}
 					</option>
 				</select>
 			</div>
@@ -176,7 +176,7 @@
 					:class="['fp-mode-chip', { active: store.filterCountryMode === m.value }]"
 					@click="store.filterCountryMode = m.value"
 				>
-					{{ m.label }}
+					{{ m.value === "airspace" ? ui.withinArea : m.value === "departure" ? ui.departure : ui.arrival }}
 				</button>
 			</div>
 		</div>
@@ -184,7 +184,13 @@
 </template>
 
 <script setup lang="ts">
+	import { useBusinessLocale } from "../../i18n/useBusinessLocale";
+	const { ui } = useBusinessLocale();
 	import { computed } from "vue";
+	import { useLocaleStore } from "../../i18n";
+	import { geoNameForLocale } from "../../data/geoNamesEn";
+	import { flightTypeLabel, aircraftCategoryLabel } from "../../utils/flightFilters";
+	const localeStore = useLocaleStore();
 	import { COUNTRIES, type CountryFilterMode } from "../../data/countries";
 	import {
 		getCitiesForRegion,
@@ -198,7 +204,7 @@
 	} from "../../utils/flightFilters";
 
 	const COUNTRY_MODES: { label: string; value: CountryFilterMode }[] = [
-		{ label: "领空", value: "airspace" },
+		{ label: "范围内", value: "airspace" },
 		{ label: "出发", value: "departure" },
 		{ label: "到达", value: "arrival" },
 	];
@@ -232,17 +238,17 @@
 	);
 
 	const level2Label = computed(() => {
-		if (store.filterCountry === "CN") return "全部省份";
-		if (store.filterCountry === "US") return "全部州";
-		return "全部地区";
+		if (store.filterCountry === "CN") return ui.value.allProvinces;
+		if (store.filterCountry === "US") return ui.value.allStates;
+		return ui.value.allRegions;
 	});
 
 	const level3Label = computed(() =>
-		store.filterCountry === "CN" ? "全部城市" : "全部城市/都会区",
+		store.filterCountry === "CN" ? ui.value.allCities : ui.value.allMetro,
 	);
 
 	const level4Label = computed(() =>
-		store.filterCountry === "CN" ? "全部区县" : "全部细分区",
+		store.filterCountry === "CN" ? ui.value.allDistricts : ui.value.allSubdivisions,
 	);
 
 	function onCountryChange(e: Event) {

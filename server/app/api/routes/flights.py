@@ -164,7 +164,9 @@ async def get_flight_stats() -> ApiResponse:
     - ``by_altitude_band``: grouped altitude bands (ground / low / medium / high)
     - ``by_speed_band``: grouped speed bands
     - ``top_callsign_prefixes``: top-20 airline/operator ICAO prefixes by count
-    - ``on_ground_count`` / ``airborne_count``: quick on-ground split
+    - ``on_ground_count`` / ``airborne_count``: display split consistent with
+      the client: altitude >100 ft is airborne; missing altitude uses the
+      non-airborne fallback. The altitude chart still marks missing as unknown.
     """
     flights = await flight_store.list_flights()
 
@@ -188,12 +190,13 @@ async def get_flight_stats() -> ApiResponse:
     for f in flights:
         if f.altitude_ft is None:
             by_altitude["unknown"] += 1
+            on_ground += 1
         elif f.altitude_ft <= 100:
             by_altitude["ground"] += 1
             on_ground += 1
         elif f.altitude_ft < 5_000:
             by_altitude["low_<5k"] += 1
-        elif f.altitude_ft < 25_000:
+        elif f.altitude_ft <= 25_000:
             by_altitude["medium_5-25k"] += 1
         else:
             by_altitude["high_>25k"] += 1

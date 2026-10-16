@@ -11,13 +11,13 @@
 			<circle cx="24" cy="24" r="20" />
 			<path d="M24 14v12M24 32v2" stroke-linecap="round" />
 		</svg>
-		<span>点击地图上的航班图标查看详情</span>
+		<span>{{ ui.detailEmpty }}</span>
 	</div>
 
 	<!-- 加载中 -->
 	<div v-else-if="loading" class="dp-loading">
 		<div class="dp-spinner"></div>
-		<span>加载中...</span>
+		<span>{{ ui.loading }}</span>
 	</div>
 
 	<!-- 详情内容 -->
@@ -63,21 +63,21 @@
 						: "--"
 				}}</span>
 				<span class="dm-unit">ft</span>
-				<span class="dm-key">高度</span>
+				<span class="dm-key">{{ ui.altitude }}</span>
 			</div>
 			<div class="dp-metric">
 				<span class="dm-val">{{
 					detail.speed_kts != null ? Math.round(detail.speed_kts) : "--"
 				}}</span>
 				<span class="dm-unit">kts</span>
-				<span class="dm-key">速度</span>
+				<span class="dm-key">{{ ui.speed }}</span>
 			</div>
 			<div class="dp-metric">
 				<span class="dm-val">{{
 					detail.heading != null ? detail.heading : "--"
 				}}</span>
 				<span class="dm-unit">°</span>
-				<span class="dm-key">航向</span>
+				<span class="dm-key">{{ ui.heading }}</span>
 			</div>
 		</div>
 
@@ -89,7 +89,7 @@
 			<div class="dp-route-stop">
 				<span class="dp-iata">{{ detail.departure_airport || "--" }}</span>
 				<span v-if="depAirportZh" class="dp-airport-zh">{{ depAirportZh }}</span>
-				<span class="dp-route-role">出发</span>
+				<span class="dp-route-role">{{ ui.departure }}</span>
 				<span v-if="detail.dep_time" class="dp-route-time">{{
 					detail.dep_time
 				}}</span>
@@ -111,7 +111,7 @@
 			<div class="dp-route-stop dp-route-stop-right">
 				<span class="dp-iata">{{ detail.arrival_airport || "--" }}</span>
 				<span v-if="arrAirportZh" class="dp-airport-zh">{{ arrAirportZh }}</span>
-				<span class="dp-route-role">到达</span>
+				<span class="dp-route-role">{{ ui.arrival }}</span>
 				<span v-if="detail.arr_time" class="dp-route-time">{{
 					detail.arr_time
 				}}</span>
@@ -127,19 +127,19 @@
 							d="M8 2a.5.5 0 01.5.5v1a.5.5 0 01-1 0v-1A.5.5 0 018 2zM8 12a.5.5 0 01.5.5v1a.5.5 0 01-1 0v-1A.5.5 0 018 12zM2 8a.5.5 0 01.5-.5h1a.5.5 0 010 1h-1A.5.5 0 012 8zm10 0a.5.5 0 01.5-.5h1a.5.5 0 010 1h-1A.5.5 0 0112 8zM5 8a3 3 0 116 0A3 3 0 015 8z"
 						/>
 					</svg>
-					当前位置天气
+					{{ ui.currentWeather }}
 				</div>
 				<WeatherBlock :weather="detail.current_weather" />
 			</template>
 			<template v-if="detail.departure_weather">
 				<div class="dp-section-title">
-					出发地天气 · {{ detail.departure_airport }}
+					{{ ui.departureWeather }} · {{ detail.departure_airport }}
 				</div>
 				<WeatherBlock :weather="detail.departure_weather" />
 			</template>
 			<template v-if="detail.arrival_weather">
 				<div class="dp-section-title">
-					到达地天气 · {{ detail.arrival_airport }}
+					{{ ui.arrivalWeather }} · {{ detail.arrival_airport }}
 				</div>
 				<WeatherBlock :weather="detail.arrival_weather" />
 			</template>
@@ -148,9 +148,12 @@
 </template>
 
 <script setup lang="ts">
+	import { useBusinessLocale } from "../i18n/useBusinessLocale";
+	const { ui } = useBusinessLocale();
 	import { computed } from "vue";
 	import WeatherBlock from "./WeatherBlock.vue";
 	import { translate, useLocaleStore } from "../i18n";
+	import { airportDisplayForLocale } from "../data/airportDisplay";
 	import { airportNameZh } from "../data/airportDisplay";
 	import { toSimplifiedChinese } from "../utils/zhLocale";
 	import { useFlightStore } from "../stores/flight";
@@ -195,7 +198,10 @@
 	);
 
 	const depAirportZh = computed(() => {
-		if (localeStore.locale !== "zh-CN") return "";
+		if (localeStore.locale !== "zh-CN") {
+			const airport = store.airports.find(a => a.iata === props.detail?.departure_airport);
+			return airport ? airportDisplayForLocale(airport, localeStore.locale).name : "";
+		}
 		const raw =
 			props.detail?.departure_airport_zh?.trim() ||
 			airportNameZh(props.detail?.departure_airport, store.airports);
@@ -203,7 +209,10 @@
 	});
 
 	const arrAirportZh = computed(() => {
-		if (localeStore.locale !== "zh-CN") return "";
+		if (localeStore.locale !== "zh-CN") {
+			const airport = store.airports.find(a => a.iata === props.detail?.arrival_airport);
+			return airport ? airportDisplayForLocale(airport, localeStore.locale).name : "";
+		}
 		const raw =
 			props.detail?.arrival_airport_zh?.trim() ||
 			airportNameZh(props.detail?.arrival_airport, store.airports);

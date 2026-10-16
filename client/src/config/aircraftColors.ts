@@ -35,50 +35,14 @@ export const AIRCRAFT_COLOR = {
 /** 各底图统一琥珀金（fly = ground） */
 
 export const STYLE_AIRCRAFT_COLORS: Record<string, string> = {
-
-	"streets-v2-dark": AIRCRAFT_COLOR.amber,
-
-	"streets-v2": AIRCRAFT_COLOR.amber,
-
-	"outdoor-v2": AIRCRAFT_COLOR.amber,
-
-	hybrid: AIRCRAFT_COLOR.amber,
-
-	satellite: AIRCRAFT_COLOR.amber,
-
-	"satellite-hybrid": AIRCRAFT_COLOR.amber,
-
-	"dataviz-dark": AIRCRAFT_COLOR.amber,
-
-	dataviz: AIRCRAFT_COLOR.amber,
-
-	alidade_smooth_dark: AIRCRAFT_COLOR.amber,
-
-	alidade_smooth: AIRCRAFT_COLOR.amber,
-
-	stamen_terrain: AIRCRAFT_COLOR.amber,
-
-	alidade_satellite: AIRCRAFT_COLOR.amber,
-
-	liberty: AIRCRAFT_COLOR.amber,
-
-	bright: AIRCRAFT_COLOR.amber,
-
-	positron: AIRCRAFT_COLOR.amber,
-
+	vector: AIRCRAFT_COLOR.amber, imagery: AIRCRAFT_COLOR.amber, terrain: AIRCRAFT_COLOR.amber,
 };
-
-
 
 export const DEFAULT_AIRCRAFT_COLOR = AIRCRAFT_COLOR.amber;
 
 
 
-const STYLE_ALIASES: Record<string, string> = {
-
-	"satellite-hybrid": "hybrid",
-
-};
+const STYLE_ALIASES: Record<string, string> = {};
 
 
 

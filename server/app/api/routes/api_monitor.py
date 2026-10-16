@@ -177,11 +177,6 @@ _MONITOR_HTML = """<!doctype html>
       airlabs:    { label:'AirLabs v9',      budget:1000, unit:'调用/月', note:'Free = 1000次/月' },
     };
 
-    const TILE_CONFIG = {
-      maptiler: { label:'MapTiler Cloud', note:'Free = 100,000 tile loads/月' },
-      stadia:   { label:'Stadia Maps',    note:'免费非商业用途，月额度 429 时切换' },
-    };
-
     const SOURCE_LABELS = {
       realtime:    { icon:'✈️', label:'实时位置层',   source:'OpenSky / FR24' },
       environment: { icon:'🌤', label:'气象环境层',   source:'OpenWeatherMap' },
@@ -200,7 +195,10 @@ _MONITOR_HTML = """<!doctype html>
       return 'ok';
     }
 
-    function fmt(v) { return v ?? '--'; }
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[ch]));
+    }
+    function fmt(v) { return escapeHtml(v ?? '--'); }
     function fmtDt(iso) {
       if (!iso) return '--';
       const d = new Date(iso);
@@ -226,7 +224,7 @@ _MONITOR_HTML = """<!doctype html>
               <h2>${cfg.label}</h2>
               <div class="stat">
                 <span class="label">今日调用</span>
-                <span class="value ${cls}">${calls.toLocaleString()} / ${budget.toLocaleString()}</span>
+                <span class="value ${cls}">${escapeHtml(calls.toLocaleString())} / ${escapeHtml(budget.toLocaleString())}</span>
               </div>
               <div class="stat">
                 <span class="label">配额消耗</span>
@@ -246,41 +244,24 @@ _MONITOR_HTML = """<!doctype html>
             <h2>FlightRadar24 (CF Worker)</h2>
             <div class="stat">
               <span class="label">当前数据源</span>
-              <span class="value ${fr24Active ? 'ok' : 'info'}">${curSrc}</span>
+              <span class="value ${fr24Active ? 'ok' : 'info'}">${escapeHtml(curSrc)}</span>
             </div>
             <div class="stat">
               <span class="label">配置默认源</span>
-              <span class="value info">${defaultSrc}</span>
+              <span class="value info">${escapeHtml(defaultSrc)}</span>
             </div>
             <div class="stat">
               <span class="label">失败次数</span>
               <span class="value ${(status.realtime?.failure_count||0)>0 ? 'err' : 'ok'}">
-                ${status.realtime?.failure_count ?? 0}
+                ${fmt(status.realtime?.failure_count ?? 0)}
               </span>
             </div>
             <div style="margin-top:8px;font-size:11px;color:var(--muted)">Cloudflare Worker免费层 = 100k次/日</div>
           </div>`;
 
-        // ── Tile proxy stats ──
-        try {
-          const tileR = await fetch('/api/v1/tiles/stats');
-          const tileJson = await tileR.json();
-          const td = tileJson.data || {};
-          let tileHtml = '';
-          for (const [k, cfg] of Object.entries(TILE_CONFIG)) {
-            const cnt = td[k] ?? 0;
-            tileHtml += `
-              <div class="panel">
-                <h2>${cfg.label} — 底图代理</h2>
-                <div class="stat">
-                  <span class="label">本次启动请求总数</span>
-                  <span class="value info">${cnt.toLocaleString()}</span>
-                </div>
-                <div style="margin-top:8px;font-size:11px;color:var(--muted)">${cfg.note}</div>
-              </div>`;
-          }
-          qHtml += tileHtml;
-        } catch(e) { /* tile stats endpoint optional */ }
+        // Basemap requests originate in the browser; backend counters cannot measure usage.
+        qHtml += `<div class="panel"><h2>天地图 — 官方底图</h2>
+          <div style="font-size:12px;color:var(--muted)">浏览器直连服务，用量、额度与授权请查看天地图应用控制台。</div></div>`;
 
         document.getElementById('quota-grid').innerHTML = qHtml;
 
@@ -298,7 +279,7 @@ _MONITOR_HTML = """<!doctype html>
                 <div class="kv">
                   上次成功：<span>${fmtDt(e.last_success_at)}</span><br>
                   上次失败：<span>${fmtDt(e.last_error_at)}</span><br>
-                  最新错误：<span class="${e.last_error ? 'warn' : ''}">${e.last_error||'无'}</span><br>
+                  最新错误：<span class="${e.last_error ? 'warn' : ''}">${escapeHtml(e.last_error||'无')}</span><br>
                   成功次数：<span>${fmt(e.success_count)}</span><br>
                   失败次数：<span class="${e.failure_count>0?'err':''}">${fmt(e.failure_count)}</span><br>
                   错误率：<span class="${errRate>20?'err':errRate>5?'warn':'ok'}">${errRate}%</span><br>

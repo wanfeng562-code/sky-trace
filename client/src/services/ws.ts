@@ -1,4 +1,5 @@
 import type { FlightBrief } from "../types/flight";
+import { BACKEND_ENABLED } from "../config/backend";
 
 export type SnapshotHandler = (flights: FlightBrief[]) => void;
 export type StatusHandler = (online: boolean) => void;
@@ -9,14 +10,19 @@ export function createFlightsSocket(
 	onSnapshot: SnapshotHandler,
 	onStatusChange?: StatusHandler,
 ): { close: () => void } {
+	if (!BACKEND_ENABLED) { onStatusChange?.(false); return { close() {} }; }
 	let ws: WebSocket | null = null;
 	let retryCount = 0;
 	let closed = false;
+	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 	function connect() {
+		if (closed) return;
+		reconnectTimer = null;
 		ws = new WebSocket(import.meta.env.VITE_WS_URL);
 
 		ws.onopen = () => {
+			if (closed) { ws?.close(); return; }
 			retryCount = 0;
 			onStatusChange?.(true);
 		};
@@ -42,7 +48,7 @@ export function createFlightsSocket(
 				const delay =
 					RECONNECT_DELAYS[Math.min(retryCount, RECONNECT_DELAYS.length - 1)];
 				retryCount++;
-				setTimeout(connect, delay);
+				reconnectTimer = setTimeout(connect, delay);
 			}
 		};
 
@@ -56,6 +62,7 @@ export function createFlightsSocket(
 	return {
 		close() {
 			closed = true;
+			if (reconnectTimer !== null) clearTimeout(reconnectTimer);
 			ws?.close();
 		},
 	};

@@ -11,7 +11,7 @@
 			<rect x="8" y="10" width="32" height="32" rx="3" />
 			<path d="M16 10V6M32 10V6M8 20h32" stroke-linecap="round" />
 		</svg>
-		<span>点击地图上的机场图标查看时刻表</span>
+		<span>{{ ui.scheduleEmpty }}</span>
 	</div>
 
 	<!-- 时刻表内容 -->
@@ -26,9 +26,9 @@
 					/>
 				</svg>
 				<span class="sp-title">{{ store.scheduleAirport }}</span>
-				<span class="sp-subtitle">时刻表</span>
+				<span class="sp-subtitle">{{ ui.schedule }}</span>
 			</div>
-			<button class="sp-close" @click="close" title="关闭">
+			<button class="sp-close" @click="close" :title="ui.close">
 				<svg viewBox="0 0 16 16" fill="currentColor">
 					<path
 						d="M4.293 4.293a1 1 0 011.414 0L8 6.586l2.293-2.293a1 1 0 111.414 1.414L9.414 8l2.293 2.293a1 1 0 01-1.414 1.414L8 9.414l-2.293 2.293a1 1 0 01-1.414-1.414L6.586 8 4.293 5.707a1 1 0 010-1.414z"
@@ -47,7 +47,7 @@
 						d="M2 5a1 1 0 011-1h10a1 1 0 010 2H3a1 1 0 01-1-1zm0 5a1 1 0 011-1h6a1 1 0 010 2H3a1 1 0 01-1-1z"
 					/>
 				</svg>
-				离港
+				{{ ui.departures }}
 			</button>
 			<button
 				:class="['sp-tab', { active: direction === 'arr' }]"
@@ -58,16 +58,16 @@
 						d="M2 5a1 1 0 011-1h6a1 1 0 010 2H3a1 1 0 01-1-1zm0 5a1 1 0 011-1h10a1 1 0 010 2H3a1 1 0 01-1-1z"
 					/>
 				</svg>
-				到港
+				{{ ui.arrivals }}
 			</button>
 		</div>
 
 		<div v-if="store.scheduleLoading" class="sp-status">
 			<div class="sp-spinner"></div>
-			加载中...
+			{{ ui.loading }}
 		</div>
 		<div v-else-if="!store.scheduleEntries.length" class="sp-status">
-			暂无时刻数据
+			{{ ui.noSchedule }}
 		</div>
 		<div v-else class="sp-list">
 			<div
@@ -78,7 +78,7 @@
 				<div class="sp-row-top">
 					<span class="sp-flight">{{ entry.flight_iata ?? "--" }}</span>
 					<span :class="['sp-status', statusClass(entry.status)]">{{
-						entry.status ?? "计划"
+						formatFlightStatusLabel(entry.status || "scheduled", localeStore.locale)
 					}}</span>
 				</div>
 				<div class="sp-row-route">
@@ -88,10 +88,10 @@
 				</div>
 				<div class="sp-row-times">
 					<span v-if="entry.dep_time" class="sp-time"
-						>起 {{ entry.dep_time }}</span
+						>{{ ui.takeoff }} {{ entry.dep_time }}</span
 					>
 					<span v-if="entry.arr_time" class="sp-time"
-						>落 {{ entry.arr_time }}</span
+						>{{ ui.landing }} {{ entry.arr_time }}</span
 					>
 				</div>
 			</div>
@@ -100,7 +100,12 @@
 </template>
 
 <script setup lang="ts">
+	import { useBusinessLocale } from "../i18n/useBusinessLocale";
+	const { ui } = useBusinessLocale();
 	import { ref, watch } from "vue";
+	import { useLocaleStore } from "../i18n";
+	import { formatFlightStatusLabel } from "../utils/flightDetailLocale";
+	const localeStore = useLocaleStore();
 	import { useFlightStore } from "../stores/flight";
 
 	const store = useFlightStore();

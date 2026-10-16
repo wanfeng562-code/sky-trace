@@ -3,7 +3,7 @@
 > 采集与额度策略见 [后端统一采集与双配置使用说明.md](./后端统一采集与双配置使用说明.md)。环境层已扩展 **GRD 5° 动态网格** 与 DB 驱动枢纽（2026-05-18）。
 
 > 整理时间：2025-06 / 更新：2026-05  
-> 覆盖范围：OpenSky Network、OpenWeatherMap、AirLabs v9、**FlightRadar24 (ddima16-flightradarapi)**、**MapTiler Cloud**、**Stadia Maps**  
+> 覆盖范围：OpenSky Network、OpenWeatherMap、AirLabs v9、**FlightRadar24 (ddima16-flightradarapi)**、**天地图官方地图服务**
 > 文档目的：汇总所有可调用端点、字段说明、额度限制，并标注对本项目的潜在价值
 
 ---
@@ -14,8 +14,7 @@
 2. [OpenWeatherMap API](#2-openweathermap-api)
 3. [AirLabs API v9](#3-airlabs-api-v9)
 4. [FlightRadar24 (ddima16-flightradarapi)](#4-flightradar24-ddima16-flightradarapi)
-5. [MapTiler Cloud API（地图底图，主）](#5-maptiler-cloud-api地图底图主)
-6. [Stadia Maps API（地图底图，备）](#6-stadia-maps-api地图底图备)
+5. [天地图官方地图服务](#5-天地图官方地图服务)
 7. [新机会与建议](#7-新机会与建议)
 
 ---
@@ -689,184 +688,24 @@ zones = fr.get_zones()  # 返回含 subzones 的嵌套 dict
 
 ---
 
-## 5. MapTiler Cloud API（地图底图，主）
+## 5. 天地图官方地图服务
 
-**官方文档：** https://docs.maptiler.com/cloud/api/  
-**根地址：** `https://api.maptiler.com`  
-**认证方式：** 所有请求统一附加 `?key=YOUR_MAPTILER_API_KEY` 查询参数  
-**免费配额：** 100,000 tile loads / 月（超额返回 `429`）  
-**错误码：** `403` = Key 无效或未授权；`429` = 月度配额耗尽  
-**Key 保护建议：** 生产环境在 MapTiler Cloud 控制台为 API Key 绑定允许的 HTTP Origin，防止被盗用；开发环境可保持无限制
+官方文档：[地图服务接口](https://lbs.tianditu.gov.cn/server/MapService.html)。
 
----
+项目使用官方 WMTS 的墨卡托瓦片，浏览器直接通过 HTTPS 加载：
 
-### 5.1 Style JSON（**当前已用**）
-
-```
-GET https://api.maptiler.com/maps/{mapId}/style.json?key=KEY
+```text
+https://t0.tianditu.gov.cn/{layer}_w/wmts
+  ?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0
+  &LAYER={layer}&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles
+  &TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk={自己的应用Key}
 ```
 
-返回完整的 MapLibre GL 样式描述，包含底图所有图层、数据源、Sprite 与字体引用。  
-MapLibre 在初始化时自动加载此 URL 并解析各资源路径。
+`layer` 为 `vec` / `cva`、`img` / `cia`、`ter` / `cta` 三组底图与注记。只在本地环境文件或部署平台填写 `VITE_TIANDITU_KEY`，配置应用授权域名和对应地图服务权限。使用额度在天地图控制台查看；后端不统计浏览器直连的地图调用次数。
 
-**本项目使用的 `mapId`：**
+地图保留天地图原始界线，中文使用官方配套注记，显示来源与核实后的审图号，不绘制自定义边界补丁。英文使用本地 GeoNames 地名点（CC BY 4.0），不调用 GeoNames 在线 API；名称优先采用英文别名，其次使用拉丁字母名称或音译。完整数据、覆盖限制与维护方法见[地图页面配置说明文档](./地图页面配置说明文档.md)。MapLibre 继续渲染航班、轨迹和天气业务层。旧境外底图与代理已退出运行链路。
 
-| mapId              | 显示名称 | 说明                         |
-| ------------------ | -------- | ---------------------------- |
-| `dataviz-dark`     | 专业深色 | 深色配色，专为数据可视化设计 |
-| `dataviz`          | 专业浅色 | 浅色配色，同系列             |
-| `streets-v2-dark`  | 街道深色 | 含街道标注的深色街道底图     |
-| `satellite-hybrid` | 卫星影像 | 真彩色卫星影像叠加道路标注   |
-
----
-
-### 5.2 矢量/栅格 Tile
-
-| 格式 | 端点                                     | 说明                 |
-| ---- | ---------------------------------------- | -------------------- |
-| 矢量 | `/maps/{mapId}/{z}/{x}/{y}.pbf?key=KEY`  | Protocol Buffer 格式 |
-| 栅格 | `/maps/{mapId}/{z}/{x}/{y}.png?key=KEY`  | PNG 栅格瓦片         |
-| JPEG | `/maps/{mapId}/{z}/{x}/{y}.jpg?key=KEY`  | JPEG 栅格（卫星图）  |
-| WebP | `/maps/{mapId}/{z}/{x}/{y}.webp?key=KEY` | WebP 栅格            |
-
-> Tile URL 由 Style JSON 中的 `sources` 字段自动定义，MapLibre 会自动请求，无需手动构造。
-
----
-
-### 5.3 Sprite（图标精灵图）
-
-```
-GET https://api.maptiler.com/maps/{mapId}/sprite.json?key=KEY      # 图标元数据
-GET https://api.maptiler.com/maps/{mapId}/sprite.png?key=KEY       # 图标图集（1x）
-GET https://api.maptiler.com/maps/{mapId}/sprite@2x.json?key=KEY   # 高清元数据
-GET https://api.maptiler.com/maps/{mapId}/sprite@2x.png?key=KEY    # 高清图集（2x）
-```
-
-Sprite URL 同样由 Style JSON 中 `sprite` 字段声明，MapLibre 自动加载。
-
----
-
-### 5.4 字体（Glyph / Font）
-
-```
-GET https://api.maptiler.com/fonts/{fontstack}/{start}-{end}.pbf?key=KEY
-```
-
-`fontstack` 为逗号分隔的字体栈（如 `Noto Sans Regular,Noto Sans Italic`），由 Style JSON `glyphs` 字段指定。MapLibre 自动按需请求字形 PBF。
-
----
-
-### 5.5 TileJSON 元数据
-
-```
-GET https://api.maptiler.com/maps/{mapId}/tiles.json?key=KEY
-```
-
-返回 TileJSON 规范对象，包含 tile URL 模板、bounds、minzoom/maxzoom、attribution 等信息。
-
----
-
-### 5.6 Sky-Trace 代理机制
-
-由于国内直连 `api.maptiler.com` 可能受限，项目通过以下链路代理所有 MapTiler 流量：
-
-```
-浏览器 → transformRequest() 重写 URL
-  → /maptiler-proxy/{path}?{qs}
-  → Vite Dev Proxy / FastAPI 后端 /api/v1/tiles/maptiler/{path}
-  → Node.js/aiohttp（读取环境变量 HTTP_PROXY）
-  → https://api.maptiler.com
-```
-
-`transformRequest` 拦截所有以 `https://api.maptiler.com` 开头的请求（Tiles、Fonts、Sprites、Style JSON），重写为本地代理路径。
-
----
-
-## 6. Stadia Maps API（地图底图，备）
-
-**官方文档：** https://docs.stadiamaps.com/  
-**根地址（所有资源）：** `https://tiles.stadiamaps.com`  
-**认证方式（二选一）：**
-- 查询参数：`?api_key=YOUR-API-KEY`
-- 请求头：`Authorization: Stadia-Auth YOUR-API-KEY`
-- 本地开发（`localhost`）：无需 Key，但受严格限速
-
-**免费层限制：** 仅限非商业用途（开发、学术、评估）；月度积分耗尽时返回 `429`，不自动续期；不得用于商业产品  
-**⚠️ ToS 限制：** 服务条款明确**禁止代理（Proxying）和批量下载**。本项目使用代理访问仅用于规避国内网络访问受限的开发场景，请勿在生产公开部署中使用此方式  
-**错误码：** `401` = 认证失败；`403` = 当前套餐不含此 API；`429` = 配额耗尽
-
----
-
-### 6.1 Style JSON（**当前已用**）
-
-```
-GET https://tiles.stadiamaps.com/styles/{style}/style.json?api_key=KEY
-```
-
-**本项目使用的 `style` ID：**
-
-| style                 | 显示名称 | 说明                       |
-| --------------------- | -------- | -------------------------- |
-| `alidade_smooth_dark` | 深色平滑 | 极简深色底图，适合数据叠加 |
-| `alidade_smooth`      | 浅色平滑 | 极简浅色底图               |
-| `alidade_satellite`   | 卫星影像 | 卫星影像底图               |
-
-**其他可用样式（参考）：**
-
-| style               | 说明                        |
-| ------------------- | --------------------------- |
-| `outdoors`          | 户外地形图，含等高线        |
-| `stamen_toner`      | 高对比黑白底图（Stamen 系） |
-| `stamen_terrain`    | 地形底图（Stamen 系）       |
-| `stamen_watercolor` | 水彩风格艺术底图            |
-| `osm_bright`        | OpenStreetMap 亮色底图      |
-
----
-
-### 6.2 矢量 Tile
-
-```
-GET https://tiles.stadiamaps.com/data/{source}/{z}/{x}/{y}.mvt?api_key=KEY
-```
-
-Tile URL 由 Style JSON 的 `sources` 字段自动给出，MapLibre 自动请求，无需手动构造。
-
----
-
-### 6.3 字体（Glyph）与 Sprite
-
-> **重要：** Stadia Maps 的字体（Glyph PBF）与 Sprite 均由 `tiles.stadiamaps.com` 提供，**不使用** `fonts.stadiamaps.com`（该域名仅供 Web 字体下载，不服务地图渲染资源）。
-
-```
-# 字体 Glyph PBF
-GET https://tiles.stadiamaps.com/fonts/{fontstack}/{start}-{end}.pbf?api_key=KEY
-
-# Sprite 元数据
-GET https://tiles.stadiamaps.com/sprites/{style}.json?api_key=KEY
-GET https://tiles.stadiamaps.com/sprites/{style}.png?api_key=KEY
-GET https://tiles.stadiamaps.com/sprites/{style}@2x.json?api_key=KEY
-GET https://tiles.stadiamaps.com/sprites/{style}@2x.png?api_key=KEY
-```
-
-Style JSON 中的 `glyphs` 与 `sprite` 字段均已指向 `tiles.stadiamaps.com`，MapLibre 自动按需加载。
-
----
-
-### 6.4 Sky-Trace 代理机制
-
-所有 Stadia Maps 资源（Style、Tiles、Fonts、Sprites）均通过同一代理链路：
-
-```
-浏览器 → transformRequest() 重写 URL
-  → /stadia-proxy/{path}?{qs}
-  → Vite Dev Proxy / FastAPI 后端 /api/v1/tiles/stadia/{path}
-  → Node.js/aiohttp（读取环境变量 HTTP_PROXY）
-  → https://tiles.stadiamaps.com
-```
-
-`transformRequest` 拦截所有以 `https://tiles.stadiamaps.com` 开头的请求，覆盖 Tiles、Fonts、Sprites 及 Style JSON，无需额外配置其他子域名代理。
-
----
+配置、审图号区分、字体本地化和软著补正验收见[地图页面配置说明文档](./地图页面配置说明文档.md)。
 
 ## 7. 新机会与建议
 

@@ -1,4 +1,4 @@
-"""从 Natural Earth admin1 按 iso_a2 拆分各国矢量边界（供前端 regionBoundaries 使用）。"""
+"""历史工具：从 Natural Earth 拆分区划数据。2026-10-11 后不用于当前地图；public/geo 已退出发布目录。"""
 from __future__ import annotations
 
 import json

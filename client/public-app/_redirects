@@ -1,0 +1,3 @@
+# Cloudflare Pages supplies native SPA fallback when no root 404.html exists.
+# Keep static assets intact: do not add a wildcard rewrite to index.html.
+# Tianditu tiles are requested directly with the application's own key.

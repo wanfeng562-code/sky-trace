@@ -1,4 +1,13 @@
 import type { FlightBrief } from "../types/flight";
+const TYPE_EN: Record<string, string> = { all: "All types", commercial: "Commercial aircraft", general: "General aviation", helicopter: "Helicopter", uav: "Unmanned aircraft", light: "Light aircraft", other: "Unclassified / other" };
+const CATEGORY_EN: Record<number, string> = { [-1]: "Unspecified (supplementary source)", 0: "Unknown (0)", 1: "No ADS-B (1)", 2: "Light", 3: "Small", 4: "Large", 5: "High vortex", 6: "Heavy", 7: "High performance", 8: "Rotorcraft", 9: "Glider", 10: "Lighter than air (10)", 11: "Parachutist / paraglider (11)", 12: "Ultralight (12)", 13: "Reserved (13)", 14: "Unmanned aircraft", 15: "Space vehicle (15)", 16: "Ground emergency (16)", 17: "Ground service (17)", 18: "Point obstacle (18)" };
+
+export function flightTypeLabel(value: string, locale: string): string {
+	return locale === "zh-CN" ? FLIGHT_TYPE_OPTIONS.find(o => o.value === value)?.label || value : TYPE_EN[value] || value;
+}
+export function aircraftCategoryLabel(value: number, locale: string): string {
+	return locale === "zh-CN" ? AIRCRAFT_CATEGORY_OPTIONS.find(o => o.value === value)?.label || String(value) : CATEGORY_EN[value] || String(value);
+}
 
 
 

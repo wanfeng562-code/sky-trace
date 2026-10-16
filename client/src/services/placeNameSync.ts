@@ -3,6 +3,7 @@ import {
 	upsertPlaceNames,
 	type PlaceNameRecord,
 } from "./api";
+import { BACKEND_ENABLED } from "../config/backend";
 import {
 	NAME_CACHE_TTL_MS,
 	readPersistentCache,
@@ -13,13 +14,14 @@ const serverMem = new Map<string, PlaceNameRecord>();
 const pendingUpsert = new Map<string, PlaceNameRecord>();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let hydratePromise: Promise<void> | null = null;
+let retryDelay = 800;
 
 function scheduleFlush() {
 	if (flushTimer !== null) return;
 	flushTimer = setTimeout(() => {
 		flushTimer = null;
 		void flushPendingToServer();
-	}, 800);
+	}, retryDelay);
 }
 
 async function flushPendingToServer(): Promise<void> {
@@ -28,13 +30,15 @@ async function flushPendingToServer(): Promise<void> {
 	pendingUpsert.clear();
 	try {
 		await upsertPlaceNames(items);
+		retryDelay = 800;
 		for (const item of items) {
 			serverMem.set(item.cache_key, item);
 		}
 	} catch (e) {
 		console.warn("[placeNameSync] upsert failed", e);
+		retryDelay = Math.min(retryDelay * 2, 30_000);
 		for (const item of items) {
-			pendingUpsert.set(item.cache_key, item);
+			if (!pendingUpsert.has(item.cache_key)) pendingUpsert.set(item.cache_key, item);
 		}
 		scheduleFlush();
 	}
@@ -67,6 +71,7 @@ export function queuePlaceNameSync(record: PlaceNameRecord): void {
 	if (!record.cache_key || !record.name_zh) return;
 	writePersistentCache(record.cache_key, record.name_zh, NAME_CACHE_TTL_MS);
 	serverMem.set(record.cache_key, record);
+	if (!BACKEND_ENABLED) return;
 	pendingUpsert.set(record.cache_key, record);
 	scheduleFlush();
 }
@@ -74,8 +79,14 @@ export function queuePlaceNameSync(record: PlaceNameRecord): void {
 export function readCachedPlaceNameZh(cacheKey: string): string | null {
 	const mem = serverMem.get(cacheKey);
 	if (mem?.name_zh) return mem.name_zh;
-	const local = readPersistentCache<string>(cacheKey);
+	const local = readPersistentCache<unknown>(cacheKey);
 	if (typeof local === "string" && local) return local;
+	// Older clients stored an entire AirportDisplayNames object under this key.
+	// Keep its display name, but rebuild country/city fields from current data.
+	if (local && typeof local === "object" && "nameZh" in local && typeof local.nameZh === "string" && local.nameZh) {
+		writePersistentCache(cacheKey, local.nameZh, NAME_CACHE_TTL_MS);
+		return local.nameZh;
+	}
 	return null;
 }
 

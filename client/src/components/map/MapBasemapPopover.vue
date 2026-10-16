@@ -31,40 +31,14 @@
 							:value="opt.id"
 							:disabled="!opt.uiReady"
 						>
-							{{ opt.label }}{{ opt.uiReady ? "" : "（未适配）" }}
+							{{ opt.label }}
 						</option>
 					</select>
 				</div>
 				<div class="bp-section">
 					<div class="bp-label">{{ i18n.basemap.source }}</div>
-					<div class="bp-grid">
-						<button
-							v-if="hasMaptiler"
-							type="button"
-							:class="['bp-chip', { active: provider === 'maptiler' }]"
-							@click="emit('switch-provider', 'maptiler')"
-						>
-							MapTiler
-						</button>
-						<button
-							v-if="hasStadia"
-							type="button"
-							:class="['bp-chip', { active: provider === 'stadia' }]"
-							@click="emit('switch-provider', 'stadia')"
-						>
-							Stadia
-						</button>
-						<button
-							type="button"
-							:class="['bp-chip', { active: provider === 'openfreemap' }]"
-							@click="emit('switch-provider', 'openfreemap')"
-						>
-							OpenFreeMap
-						</button>
-					</div>
-					<p v-if="fallbackActive" class="bp-note">
-						{{ fallbackNote }}
-					</p>
+					<div class="bp-grid"><span class="bp-chip active">{{ i18n.business.provider }}</span></div>
+					<p v-if="unavailable" class="bp-note bp-warning">{{ i18n.basemap.unavailable }}</p>
 				</div>
 				<div class="bp-section">
 					<div class="bp-label">{{ i18n.basemap.style }}</div>
@@ -80,64 +54,7 @@
 						</button>
 					</div>
 				</div>
-				<div class="bp-section">
-					<div class="bp-label">{{ i18n.basemap.labelLang }}</div>
-					<div class="bp-row">
-						<span class="bp-row-label">{{ i18n.basemap.labelLines }}</span>
-						<div class="bp-grid">
-							<button
-								type="button"
-								:class="['bp-chip', { active: labelLines === 1 }]"
-								@click="emit('update:labelLines', 1)"
-							>
-								{{ i18n.basemap.singleLine }}
-							</button>
-							<button
-								type="button"
-								:class="['bp-chip', { active: labelLines === 2 }]"
-								@click="emit('update:labelLines', 2)"
-							>
-								{{ i18n.basemap.doubleLine }}
-							</button>
-						</div>
-					</div>
-					<div class="bp-row">
-						<span class="bp-row-label">{{
-							labelLines === 2 ? i18n.basemap.line1 : i18n.basemap.language
-						}}</span>
-						<select
-							class="bp-select"
-							:value="labelLine1"
-							@change="
-								emit(
-									'update:labelLine1',
-									($event.target as HTMLSelectElement).value,
-								)
-							"
-						>
-							<option v-for="opt in labelOptions" :key="opt.key" :value="opt.key">
-								{{ opt.label }}
-							</option>
-						</select>
-					</div>
-					<div v-if="labelLines === 2" class="bp-row">
-						<span class="bp-row-label">{{ i18n.basemap.line2 }}</span>
-						<select
-							class="bp-select"
-							:value="labelLine2"
-							@change="
-								emit(
-									'update:labelLine2',
-									($event.target as HTMLSelectElement).value,
-								)
-							"
-						>
-							<option v-for="opt in labelOptions" :key="opt.key" :value="opt.key">
-								{{ opt.label }}
-							</option>
-						</select>
-					</div>
-				</div>
+				<p class="bp-note">{{ i18n.basemap.officialLabels }}</p>
 			</div>
 		</div>
 	</Teleport>
@@ -145,41 +62,28 @@
 
 <script setup lang="ts">
 	import { computed } from "vue";
-	import { LOCALE_OPTIONS, translate, useLocaleStore } from "../../i18n";
-	import type { MapProvider } from "./MapLayerPopover.vue";
+	import { LOCALE_OPTIONS, useLocaleStore } from "../../i18n";
+	import type { MapProvider } from "../../utils/mapBasemap";
 
 	const props = defineProps<{
 		open: boolean;
 		provider: MapProvider;
 		styleId: string;
 		styles: { id: string; label: string }[];
-		hasMaptiler: boolean;
-		hasStadia: boolean;
-		fallbackActive: boolean;
-		labelLines: 1 | 2;
-		labelLine1: string;
-		labelLine2: string;
-		labelOptions: readonly { key: string; label: string }[];
+		unavailable: boolean;
 	}>();
 
 	const emit = defineEmits<{
 		"update:open": [value: boolean];
-		"update:labelLines": [value: 1 | 2];
-		"update:labelLine1": [value: string];
-		"update:labelLine2": [value: string];
-		"switch-provider": [provider: MapProvider];
 		"switch-style": [styleId: string];
 	}>();
 
 	const localeStore = useLocaleStore();
 	const i18n = computed(() => localeStore.t);
 
-	const fallbackNote = computed(() =>
-		translate(i18n.value, "basemap.fallback", { provider: props.provider }),
-	);
 
 	const anchorStyle = computed(() => ({
-		top: "var(--map-console-top, 16px)",
+		top: "calc(var(--nav-h, 64px) + var(--map-console-top, 16px))",
 		right: "16px",
 	}));
 
@@ -301,8 +205,10 @@
 	.bp-note {
 		margin: 8px 0 0;
 		font-size: 11px;
-		color: var(--warning);
+		color: var(--text-muted);
 	}
+
+	.bp-warning { color: var(--warning); }
 
 	.bp-row {
 		display: flex;

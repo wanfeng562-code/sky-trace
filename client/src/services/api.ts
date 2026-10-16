@@ -1,4 +1,5 @@
 import axios from "axios";
+import { BACKEND_ENABLED } from "../config/backend";
 
 import {
 	AIRPORTS_CACHE_TTL_MS,
@@ -129,6 +130,7 @@ async function getWithPolicy<T>(
 export async function fetchFlights(
 	params?: FlightQueryParams,
 ): Promise<FlightBrief[]> {
+	if (!BACKEND_ENABLED) return [];
 	const pageSize = 2000;
 	let page = 1;
 	const all: FlightBrief[] = [];
@@ -162,6 +164,7 @@ export async function fetchFlights(
 export async function fetchFlightDetail(
 	flightId: string,
 ): Promise<FlightDetail> {
+	if (!BACKEND_ENABLED) throw new Error("Backend service is disabled");
 	const detail = await getWithPolicy<
 		FlightDetail & {
 			last_position?: Partial<FlightBrief> | null;
@@ -205,6 +208,7 @@ export async function fetchFlightDetail(
 export async function fetchFlightTrack(
 	flightId: string,
 ): Promise<TrackPoint[]> {
+	if (!BACKEND_ENABLED) return [];
 	return getWithPolicy<TrackPoint[]>(`/flights/${flightId}/track`, undefined, {
 		retries: 1,
 		timeoutMs: 20000,
@@ -212,6 +216,7 @@ export async function fetchFlightTrack(
 }
 
 export async function fetchFlightStats(): Promise<FlightStats> {
+	if (!BACKEND_ENABLED) return { total: 0, on_ground_count: 0, airborne_count: 0, by_source: {}, by_altitude_band: {}, by_speed_band: {}, top_callsign_prefixes: [] };
 	return getWithPolicy<FlightStats>("/flights/summary/stats", undefined, {
 		ttlMs: 30000,
 		retries: 1,
@@ -223,6 +228,7 @@ export async function fetchAirports(
 	force = false,
 	opts?: { hubsOnly?: boolean },
 ): Promise<AirportInfo[]> {
+	if (!BACKEND_ENABLED) return [];
 	const hubsOnly = opts?.hubsOnly !== false;
 	const persistKey = `airports:${hubsOnly ? "hubs" : "all"}`;
 	if (!force) {
@@ -245,6 +251,7 @@ export async function fetchAirports(
 }
 
 export async function fetchWeatherGrid(force = false): Promise<WeatherGridCell[]> {
+	if (!BACKEND_ENABLED) return [];
 	return getWithPolicy<WeatherGridCell[]>("/weather-grid", undefined, {
 		ttlMs: force ? 0 : 60 * 1000,
 		retries: 1,
@@ -257,6 +264,7 @@ export async function fetchPlaybackFrames(
 	end: string,
 	interval = 300,
 ): Promise<PlaybackData> {
+	if (!BACKEND_ENABLED) return { start, end, interval_seconds: interval, total_frames: 0, frames: [] };
 	const persistKey = `playback:${start}|${end}|${interval}`;
 	const persisted = readPersistentCache<PlaybackData>(persistKey);
 	if (persisted?.frames) return persisted;
@@ -277,6 +285,7 @@ export async function fetchPlaybackFrames(
 export async function fetchDatahubWeather(
 	force = false,
 ): Promise<Record<string, unknown>> {
+	if (!BACKEND_ENABLED) return {};
 	return getWithPolicy<Record<string, unknown>>(
 		"/datahub/weather",
 		undefined,
@@ -289,6 +298,7 @@ export async function fetchDatahubWeather(
 }
 
 export async function fetchAirQuality(): Promise<AirQualityHub[]> {
+	if (!BACKEND_ENABLED) return [];
 	const raw = await getWithPolicy<Record<string, unknown>>(
 		"/datahub/air_quality",
 		undefined,
@@ -318,6 +328,7 @@ export type PlaceNameRecord = {
 export async function fetchPlaceNames(
 	keys: string[],
 ): Promise<PlaceNameRecord[]> {
+	if (!BACKEND_ENABLED) return [];
 	if (!keys.length) return [];
 	const data = await getWithPolicy<{ items: PlaceNameRecord[] }>(
 		"/places/names",
@@ -330,18 +341,25 @@ export async function fetchPlaceNames(
 export async function upsertPlaceNames(
 	items: PlaceNameRecord[],
 ): Promise<number> {
-	if (!items.length) return 0;
-	const data = await api.put<ApiResponse<{ upserted: number }>>(
-		"/places/names",
-		{ items },
-	);
-	return data.data.data?.upserted ?? 0;
+	if (!BACKEND_ENABLED) return 0;
+	// Match PlaceNameBatchIn: at most 500 rows and bounded string lengths.
+	const valid = items.filter(item => item.cache_key?.trim() && item.cache_key.length <= 180 && item.name_zh?.trim()).map(item => ({
+		cache_key: item.cache_key.trim(), name_zh: item.name_zh.trim().slice(0, 500),
+		name_en: item.name_en?.slice(0, 500), source_text: item.source_text?.slice(0, 500),
+	}));
+	let count = 0;
+	for (let offset = 0; offset < valid.length; offset += 500) {
+		const response = await api.put<ApiResponse<{ upserted: number }>>("/places/names", { items: valid.slice(offset, offset + 500) });
+		count += response.data.data?.upserted ?? 0;
+	}
+	return count;
 }
 
 export async function fetchAirportSchedules(
 	iata: string,
 	direction = "dep",
 ): Promise<ScheduleEntry[]> {
+	if (!BACKEND_ENABLED) return [];
 	return (
 		(await getWithPolicy<ScheduleEntry[]>(
 			`/airports/${iata}/schedules`,

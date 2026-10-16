@@ -214,6 +214,11 @@ export function aqiLabelLayout(): SymbolLayerSpecification["layout"] {
 		"text-allow-overlap": false,
 		"text-ignore-placement": false,
 		"text-optional": true,
+	};
+}
+
+export function aqiLabelPaint(): SymbolLayerSpecification["paint"] {
+	return {
 		"text-opacity": [
 			"interpolate",
 			["linear"],
@@ -223,11 +228,6 @@ export function aqiLabelLayout(): SymbolLayerSpecification["layout"] {
 			6.5,
 			1,
 		],
-	};
-}
-
-export function aqiLabelPaint(): SymbolLayerSpecification["paint"] {
-	return {
 		"text-color": "#e2e8f0",
 		"text-halo-color": SHELL_HALO,
 		"text-halo-width": 1.25,
@@ -350,6 +350,11 @@ export function weatherGridMarkerLayout(): SymbolLayerSpecification["layout"] {
 		"text-allow-overlap": true,
 		"text-ignore-placement": true,
 		"text-font": ["Noto Sans Regular"],
+	};
+}
+
+export function weatherGridMarkerPaint(): SymbolLayerSpecification["paint"] {
+	return {
 		"text-opacity": [
 			"interpolate",
 			["linear"],
@@ -359,11 +364,6 @@ export function weatherGridMarkerLayout(): SymbolLayerSpecification["layout"] {
 			6,
 			0.5,
 		],
-	};
-}
-
-export function weatherGridMarkerPaint(): SymbolLayerSpecification["paint"] {
-	return {
 		"text-color": [
 			"case",
 			["==", ["get", "has_weather"], 1],
@@ -814,7 +814,7 @@ export function applyMapMarkerLabelStyles(map: MapLibreMap): void {
 /** 底图切换后或图层已存在时，统一刷新叠加层视觉参数 */
 export function applyPremiumOverlayStyles(
 	map: MapLibreMap,
-	_provider: MapLabelProvider = "maptiler",
+	_provider: MapLabelProvider = "tianditu",
 ): void {
 	const ids = OVERLAY_LAYER_IDS;
 	setPaint(map, ids.hubPoints, hubAirportCirclePaint() as PaintProps);

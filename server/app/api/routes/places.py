@@ -26,7 +26,7 @@ class PlaceNameBatchIn(BaseModel):
 async def list_place_names(
     keys: str = Query(
         ...,
-        description="Comma-separated cache keys, e.g. ap.zh:PEK,place.zh:CN-BJ",
+        description="Comma-separated cache keys, e.g. ap.zh:v2:PEK,place.zh:v2:CN-BJ",
     ),
 ) -> ApiResponse:
     """Return cached simplified Chinese names for the given keys."""
